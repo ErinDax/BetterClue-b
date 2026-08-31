@@ -436,13 +436,13 @@ public class BookPanel extends AbstractWidget {
 	}
 
 	@Override
-	public boolean mouseScrolled(double mouseX, double mouseY, double ignoredHorizontal, double verticalAmount) {
+	public boolean mouseScrolled(double mouseX, double mouseY, double deltaAmount) {
 		if (!this.expanded || !this.isMouseOver(mouseX, mouseY)) {
 			return false;
 		}
-		int delta = (int) Math.round(-verticalAmount);
+		int delta = (int) Math.round(-deltaAmount);
 		if (delta == 0) {
-			delta = verticalAmount > 0 ? -1 : 1;
+			delta = deltaAmount > 0 ? -1 : 1;
 		}
 		int catTop = this.catAreaTop();
 		if (mouseY >= catTop && mouseY < catTop + this.catAreaHeight) {

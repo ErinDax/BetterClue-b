@@ -1,5 +1,5 @@
 modLoader="javafml"
-loaderVersion="[1,)"
+loaderVersion="[47,)"
 license="All Rights Reserved"
 
 [[mods]]
@@ -10,19 +10,16 @@ logoFile="assets/betterclue/icon.png"
 authors="202037994@qq.com"
 description='''更好的线索'''
 
-[[mixins]]
-config="betterclue.mixins.json"
-
 [[dependencies.betterclue]]
-modId="neoforge"
-type="required"
-versionRange="[21.1.0,)"
+modId="forge"
+mandatory=true
+versionRange="[47.4.22,)"
 ordering="NONE"
 side="BOTH"
 
 [[dependencies.betterclue]]
 modId="minecraft"
-type="required"
-versionRange="[1.21.1,1.21.2)"
+mandatory=true
+versionRange="[1.20.1,1.21)"
 ordering="NONE"
 side="BOTH"

@@ -3,19 +3,12 @@ package cn.erindax.betterclue.common.network;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.StreamCodec;
 
 public record BookData(String title, String author, List<String> pages) {
 	public static final int MAX_TITLE = 32;
 	public static final int MAX_AUTHOR = 16;
 	public static final int MAX_PAGES = 100;
 	public static final int MAX_PAGE_LEN = 1024;
-
-	public static final StreamCodec<RegistryFriendlyByteBuf, BookData> STREAM_CODEC = StreamCodec.of(
-		(buf, data) -> write(buf, data),
-		BookData::read
-	);
 
 	public BookData {
 		title = clip(title, MAX_TITLE);
@@ -34,7 +27,7 @@ public record BookData(String title, String author, List<String> pages) {
 		return this.title.isEmpty() ? "无标题" : this.title;
 	}
 
-	private static void write(FriendlyByteBuf buf, BookData data) {
+	public static void write(FriendlyByteBuf buf, BookData data) {
 		buf.writeUtf(data.title, MAX_TITLE);
 		buf.writeUtf(data.author, MAX_AUTHOR);
 		buf.writeVarInt(data.pages.size());
@@ -43,7 +36,7 @@ public record BookData(String title, String author, List<String> pages) {
 		}
 	}
 
-	private static BookData read(FriendlyByteBuf buf) {
+	public static BookData read(FriendlyByteBuf buf) {
 		String title = buf.readUtf(MAX_TITLE);
 		String author = buf.readUtf(MAX_AUTHOR);
 		int count = Math.min(buf.readVarInt(), MAX_PAGES);

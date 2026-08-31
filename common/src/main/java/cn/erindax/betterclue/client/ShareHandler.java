@@ -4,12 +4,11 @@ import cn.erindax.betterclue.client.book.Book;
 import cn.erindax.betterclue.client.gui.BookReadScreen;
 import cn.erindax.betterclue.client.gui.RenamePromptScreen;
 import cn.erindax.betterclue.PlatformNetwork;
-import cn.erindax.betterclue.common.network.ShareDispatcher;
-import cn.erindax.betterclue.common.network.ShareNearbyC2S;
-import cn.erindax.betterclue.common.network.ShareViewC2S;
 import cn.erindax.betterclue.common.network.BookData;
+import cn.erindax.betterclue.common.network.ShareDispatcher;
 import com.mojang.blaze3d.platform.InputConstants;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 import net.minecraft.client.Minecraft;
@@ -19,14 +18,13 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.network.chat.Component;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.component.WrittenBookContent;
 import net.minecraft.world.phys.AABB;
 import org.lwjgl.glfw.GLFW;
 
@@ -62,27 +60,27 @@ public final class ShareHandler {
 			CollectHandler.showNotice("该分类暂无书籍");
 			return;
 		}
-		int nearby = shareableNearbyCount(ShareNearbyC2S.TYPE);
+		int nearby = shareableNearbyCount();
 		if (nearby < 0) {
 			return;
 		}
 		for (Book book : books) {
-			PlatformNetwork.sendToServer(new ShareNearbyC2S(new BookData(book.title(), book.author(), book.pages())));
+			PlatformNetwork.shareNearby(new BookData(book.title(), book.author(), book.pages()));
 		}
 		CollectHandler.showNotice("已向附近 " + nearby + " 名玩家分享 " + books.size() + " 本书");
 	}
 
 	private static void shareData(BookData book) {
-		int nearby = shareableNearbyCount(ShareNearbyC2S.TYPE);
+		int nearby = shareableNearbyCount();
 		if (nearby < 0) {
 			return;
 		}
-		PlatformNetwork.sendToServer(new ShareNearbyC2S(book));
+		PlatformNetwork.shareNearby(book);
 		CollectHandler.showNotice("已向附近 " + nearby + " 名玩家分享《" + book.displayTitle() + "》");
 	}
 
-	private static int shareableNearbyCount(CustomPacketPayload.Type<?> type) {
-		if (!PlatformNetwork.canSendToServer(type)) {
+	private static int shareableNearbyCount() {
+		if (!PlatformNetwork.canSendToServer()) {
 			CollectHandler.showNotice("当前服务器无法分享");
 			return -1;
 		}
@@ -100,7 +98,7 @@ public final class ShareHandler {
 		if (player == null) {
 			return;
 		}
-		if (!PlatformNetwork.canSendToServer(ShareViewC2S.TYPE)) {
+		if (!PlatformNetwork.canSendToServer()) {
 			CollectHandler.showNotice("当前服务器无法分享");
 			return;
 		}
@@ -114,17 +112,24 @@ public final class ShareHandler {
 			CollectHandler.showNotice("请准星对准5格内的玩家");
 			return;
 		}
-		PlatformNetwork.sendToServer(new ShareViewC2S(target.getUUID(), book));
+		PlatformNetwork.shareView(target.getUUID(), book);
 		CollectHandler.showNotice("已将《" + book.displayTitle() + "》分享给 " + target.getGameProfile().getName());
 	}
 
 	private static BookData fromHeldBook(ItemStack stack) {
-		WrittenBookContent content = stack.get(DataComponents.WRITTEN_BOOK_CONTENT);
-		if (content == null) {
+		if (!stack.is(Items.WRITTEN_BOOK)) {
 			return null;
 		}
-		List<String> pages = content.getPages(false).stream().map(Component::getString).toList();
-		return new BookData(content.title().raw(), content.author(), pages);
+		CompoundTag tag = stack.getTag();
+		if (tag == null) {
+			return null;
+		}
+		List<String> pages = new ArrayList<>();
+		ListTag pageList = tag.getList("pages", Tag.TAG_STRING);
+		for (int i = 0; i < pageList.size(); i++) {
+			pages.add(CollectHandler.pageToPlainText(pageList.getString(i)));
+		}
+		return new BookData(tag.getString("title"), tag.getString("author"), pages);
 	}
 
 	private static int nearbyPlayerCount() {

@@ -1,22 +1,14 @@
 package cn.erindax.betterclue.common.network;
 
-import cn.erindax.betterclue.BetterClue;
-import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.ByteBufCodecs;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.network.FriendlyByteBuf;
 
-public record ShareOfferS2C(String fromName, BookData book) implements CustomPacketPayload {
-	public static final Type<ShareOfferS2C> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(BetterClue.MOD_ID, "share_offer"));
-	public static final StreamCodec<RegistryFriendlyByteBuf, ShareOfferS2C> CODEC = StreamCodec.composite(
-		ByteBufCodecs.STRING_UTF8, ShareOfferS2C::fromName,
-		BookData.STREAM_CODEC, ShareOfferS2C::book,
-		ShareOfferS2C::new
-	);
+public record ShareOfferS2C(String fromName, BookData book) {
+	public static void encode(ShareOfferS2C msg, FriendlyByteBuf buf) {
+		buf.writeUtf(msg.fromName, 16);
+		BookData.write(buf, msg.book);
+	}
 
-	@Override
-	public Type<? extends CustomPacketPayload> type() {
-		return TYPE;
+	public static ShareOfferS2C decode(FriendlyByteBuf buf) {
+		return new ShareOfferS2C(buf.readUtf(16), BookData.read(buf));
 	}
 }

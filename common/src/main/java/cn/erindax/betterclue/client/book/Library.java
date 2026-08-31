@@ -10,11 +10,10 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
+import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.Tag;
 import org.slf4j.Logger;
 
@@ -54,7 +53,7 @@ public final class Library {
 		this.loaded = true;
 		try {
 			Path path = getSavePath();
-			CompoundTag root = Files.exists(path) ? NbtIo.readCompressed(path, NbtAccounter.unlimitedHeap()) : null;
+			CompoundTag root = Files.exists(path) ? NbtIo.readCompressed(path.toFile()) : null;
 			if (root == null) {
 				ensureDefaultCategory();
 				return;
@@ -92,7 +91,7 @@ public final class Library {
 				catList.add(category.toTag());
 			}
 			root.put("Categories", catList);
-			NbtIo.writeCompressed(root, path);
+			NbtIo.writeCompressed(root, path.toFile());
 		} catch (IOException e) {
 			LOGGER.warn("保存书籍收集存档失败: {}", e.toString());
 		}

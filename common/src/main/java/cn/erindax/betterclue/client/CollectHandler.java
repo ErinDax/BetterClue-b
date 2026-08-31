@@ -9,17 +9,20 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.component.WrittenBookContent;
+import net.minecraft.world.item.Items;
 import org.slf4j.Logger;
 
 public final class CollectHandler {
@@ -51,13 +54,20 @@ public final class CollectHandler {
 	}
 
 	public static void onBookOpened(ItemStack stack) {
-		WrittenBookContent content = stack.get(DataComponents.WRITTEN_BOOK_CONTENT);
-		if (content == null) {
+		if (!stack.is(Items.WRITTEN_BOOK)) {
 			return;
 		}
-		String title = content.title().raw();
-		String author = content.author();
-		List<String> pages = content.getPages(false).stream().map(Component::getString).toList();
+		CompoundTag tag = stack.getTag();
+		if (tag == null) {
+			return;
+		}
+		String title = tag.getString("title");
+		String author = tag.getString("author");
+		List<String> pages = new ArrayList<>();
+		ListTag pageList = tag.getList("pages", Tag.TAG_STRING);
+		for (int i = 0; i < pageList.size(); i++) {
+			pages.add(pageToPlainText(pageList.getString(i)));
+		}
 		notifyAddResult(Library.get().addBook(title, author, pages), title);
 	}
 
@@ -67,6 +77,18 @@ public final class CollectHandler {
 			return;
 		}
 		notifyAddResult(result, book.title());
+	}
+
+	public static String pageToPlainText(String raw) {
+		if (raw == null || raw.isEmpty()) {
+			return "";
+		}
+		try {
+			Component component = Component.Serializer.fromJson(raw);
+			return component == null ? raw : component.getString();
+		} catch (Exception ignored) {
+			return raw;
+		}
 	}
 
 	private static void notifyAddResult(Library.AddResult result, String title) {

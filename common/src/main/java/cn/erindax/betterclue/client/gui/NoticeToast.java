@@ -6,12 +6,10 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.toasts.Toast;
 import net.minecraft.client.gui.components.toasts.ToastComponent;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 public class NoticeToast implements Toast {
-	private static final ResourceLocation BACKGROUND = ResourceLocation.withDefaultNamespace("toast/recipe");
 	private static final ItemStack BOOK_ICON = new ItemStack(Items.WRITTEN_BOOK);
 	private static final long DISPLAY_MS = 4500L;
 	private static final int MIN_WIDTH = 160;
@@ -21,6 +19,7 @@ public class NoticeToast implements Toast {
 	private final Component title;
 	private final Component message;
 	private final int width;
+	private long firstSeen = -1L;
 
 	public NoticeToast(Component title, Component message) {
 		this.title = title;
@@ -45,15 +44,22 @@ public class NoticeToast implements Toast {
 
 	@Override
 	public Visibility render(GuiGraphics guiGraphics, ToastComponent toastComponent, long timeSinceLastVisible) {
-		guiGraphics.blitSprite(BACKGROUND, 0, 0, this.width(), this.height());
+		if (this.firstSeen < 0L) {
+			this.firstSeen = timeSinceLastVisible;
+		}
+		int w = this.width();
+		int h = this.height();
+		guiGraphics.fill(0, 0, w, h, 0xA0101010);
+		guiGraphics.fill(0, 0, w, 1, 0x80FFFFFF);
+		guiGraphics.fill(0, h - 1, w, h, 0x80000000);
 		guiGraphics.renderFakeItem(BOOK_ICON, 8, 8);
 		Font font = toastComponent.getMinecraft().font;
 		if (this.message == null) {
-			guiGraphics.drawString(font, this.title, 30, 12, 0x500050, false);
+			guiGraphics.drawString(font, this.title, 30, 12, 0xFFFF55, false);
 		} else {
-			guiGraphics.drawString(font, this.title, 30, 7, 0x500050, false);
-			guiGraphics.drawString(font, this.message, 30, 18, 0x000000, false);
+			guiGraphics.drawString(font, this.title, 30, 7, 0xFFFF55, false);
+			guiGraphics.drawString(font, this.message, 30, 18, 0xFFFFFF, false);
 		}
-		return timeSinceLastVisible >= DISPLAY_MS * toastComponent.getNotificationDisplayTimeMultiplier() ? Visibility.HIDE : Visibility.SHOW;
+		return timeSinceLastVisible - this.firstSeen < DISPLAY_MS ? Visibility.SHOW : Visibility.HIDE;
 	}
 }

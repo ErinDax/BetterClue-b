@@ -8,4 +8,4 @@ pluginManagement {
 }
 
 rootProject.name = 'betterclue'
-include 'common', 'fabric', 'neoforge'
+include 'common', 'fabric', 'forge'

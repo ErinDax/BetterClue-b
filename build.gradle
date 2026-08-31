@@ -16,8 +16,8 @@ allprojects {
 }
 
 tasks.register('collectJars', Copy) {
-	dependsOn ':fabric:remapJar', ':neoforge:remapJar'
-	from { [project(':fabric').tasks.remapJar.archiveFile, project(':neoforge').tasks.remapJar.archiveFile] }
+	dependsOn ':fabric:remapJar', ':forge:remapJar'
+	from { [project(':fabric').tasks.remapJar.archiveFile, project(':forge').tasks.remapJar.archiveFile] }
 	into 'dist'
 }
 
@@ -32,7 +32,7 @@ subprojects {
 	repositories {
 		maven { url = 'https://maven-central.storage-download.googleapis.com/maven2/' }
 		maven { url = 'https://maven.fabricmc.net/' }
-		maven { url = 'https://maven.neoforged.net/releases/' }
+		maven { url = 'https://maven.minecraftforge.net/' }
 		maven { url = 'https://maven.architectury.dev/' }
 	}
 
@@ -56,7 +56,7 @@ subprojects {
 
 	java {
 		toolchain {
-			languageVersion = JavaLanguageVersion.of(21)
+			languageVersion = JavaLanguageVersion.of(17)
 		}
 	}
 

@@ -25,9 +25,9 @@ public abstract class CreativeModeInventoryScreenMixin extends Screen {
 	}
 
 	@Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true)
-	private void betterclue$scrollPanel(double mouseX, double mouseY, double horizontal, double vertical, CallbackInfoReturnable<Boolean> cir) {
+	private void betterclue$scrollPanel(double mouseX, double mouseY, double delta, CallbackInfoReturnable<Boolean> cir) {
 		BookPanel panel = BookPanel.find(this);
-		if (panel != null && panel.mouseScrolled(mouseX, mouseY, horizontal, vertical)) {
+		if (panel != null && panel.mouseScrolled(mouseX, mouseY, delta)) {
 			cir.setReturnValue(true);
 		}
 	}

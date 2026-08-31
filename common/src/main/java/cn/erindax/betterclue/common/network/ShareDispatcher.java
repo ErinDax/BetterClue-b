@@ -19,8 +19,8 @@ public final class ShareDispatcher {
 		AABB box = sender.getBoundingBox().inflate(r);
 		List<ServerPlayer> nearby = sender.serverLevel().getEntitiesOfClass(ServerPlayer.class, box, other -> other != sender && sender.distanceTo(other) <= r);
 		for (ServerPlayer target : nearby) {
-			if (PlatformNetwork.canSendToPlayer(target, ShareOfferS2C.TYPE)) {
-				PlatformNetwork.sendToPlayer(target, new ShareOfferS2C(fromName, book));
+			if (PlatformNetwork.canSendToPlayer(target)) {
+				PlatformNetwork.sendOffer(target, fromName, book);
 			}
 		}
 	}
@@ -30,8 +30,8 @@ public final class ShareDispatcher {
 		if (!(raw instanceof ServerPlayer target) || sender.distanceTo(target) > SHARE_RANGE) {
 			return;
 		}
-		if (PlatformNetwork.canSendToPlayer(target, OpenSharedBookS2C.TYPE)) {
-			PlatformNetwork.sendToPlayer(target, new OpenSharedBookS2C(sender.getGameProfile().getName(), book));
+		if (PlatformNetwork.canSendToPlayer(target)) {
+			PlatformNetwork.sendOpen(target, sender.getGameProfile().getName(), book);
 		}
 	}
 }
