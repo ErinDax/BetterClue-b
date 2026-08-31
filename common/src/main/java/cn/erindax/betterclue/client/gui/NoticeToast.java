@@ -4,7 +4,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.toasts.Toast;
-import net.minecraft.client.gui.components.toasts.ToastComponent;
+import net.minecraft.client.gui.components.toasts.ToastManager;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
@@ -21,6 +22,8 @@ public class NoticeToast implements Toast {
 	private final Component title;
 	private final Component message;
 	private final int width;
+	private long firstSeen = -1L;
+	private Visibility wantedVisibility = Visibility.SHOW;
 
 	public NoticeToast(Component title, Component message) {
 		this.title = title;
@@ -44,16 +47,28 @@ public class NoticeToast implements Toast {
 	}
 
 	@Override
-	public Visibility render(GuiGraphics guiGraphics, ToastComponent toastComponent, long timeSinceLastVisible) {
-		guiGraphics.blitSprite(BACKGROUND, 0, 0, this.width(), this.height());
+	public Visibility getWantedVisibility() {
+		return this.wantedVisibility;
+	}
+
+	@Override
+	public void update(ToastManager toastManager, long timeSinceLastVisible) {
+		if (this.firstSeen < 0L) {
+			this.firstSeen = timeSinceLastVisible;
+		}
+		double visibleMs = DISPLAY_MS * toastManager.getNotificationDisplayTimeMultiplier();
+		this.wantedVisibility = timeSinceLastVisible - this.firstSeen < visibleMs ? Visibility.SHOW : Visibility.HIDE;
+	}
+
+	@Override
+	public void render(GuiGraphics guiGraphics, Font font, long ignored) {
+		guiGraphics.blitSprite(RenderType::guiTextured, BACKGROUND, 0, 0, this.width(), this.height());
 		guiGraphics.renderFakeItem(BOOK_ICON, 8, 8);
-		Font font = toastComponent.getMinecraft().font;
 		if (this.message == null) {
 			guiGraphics.drawString(font, this.title, 30, 12, 0x500050, false);
 		} else {
 			guiGraphics.drawString(font, this.title, 30, 7, 0x500050, false);
 			guiGraphics.drawString(font, this.message, 30, 18, 0x000000, false);
 		}
-		return timeSinceLastVisible >= DISPLAY_MS * toastComponent.getNotificationDisplayTimeMultiplier() ? Visibility.HIDE : Visibility.SHOW;
 	}
 }

@@ -81,7 +81,7 @@ public final class CollectHandler {
 	}
 
 	private static void showNotice(String title, String message) {
-		Minecraft.getInstance().getToasts().addToast(new NoticeToast(
+		Minecraft.getInstance().getToastManager().addToast(new NoticeToast(
 			Component.literal(title),
 			message.isEmpty() ? null : Component.literal(message)
 		));
