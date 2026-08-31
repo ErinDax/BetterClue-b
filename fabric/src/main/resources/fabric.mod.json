@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "betterclue",
+  "version": "${version}",
+  "name": "更好的线索",
+  "description": "更好的线索",
+  "authors": [
+    "202037994@qq.com"
+  ],
+  "icon": "assets/betterclue/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "cn.erindax.betterclue.fabric.BetterClueFabric"
+    ],
+    "client": [
+      "cn.erindax.betterclue.fabric.client.BetterClueFabricClient"
+    ]
+  },
+  "mixins": [
+    "betterclue.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "1.20.1",
+    "java": ">=17",
+    "fabric-api": "*"
+  }
+}

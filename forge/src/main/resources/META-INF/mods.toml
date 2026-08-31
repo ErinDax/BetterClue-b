@@ -1,0 +1,25 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="betterclue"
+version="${version}"
+displayName="更好的线索"
+logoFile="assets/betterclue/icon.png"
+authors="202037994@qq.com"
+description='''更好的线索'''
+
+[[dependencies.betterclue]]
+modId="forge"
+mandatory=true
+versionRange="[47.4.22,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.betterclue]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.21)"
+ordering="NONE"
+side="BOTH"
