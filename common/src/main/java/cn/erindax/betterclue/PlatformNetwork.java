@@ -1,8 +1,7 @@
 package cn.erindax.betterclue;
 
-import cn.erindax.betterclue.common.network.BookData;
+import cn.erindax.betterclue.network.Fragment;
 import dev.architectury.injectables.annotations.ExpectPlatform;
-import java.util.UUID;
 import net.minecraft.server.level.ServerPlayer;
 
 public final class PlatformNetwork {
@@ -15,12 +14,7 @@ public final class PlatformNetwork {
 	}
 
 	@ExpectPlatform
-	public static void shareNearby(BookData book) {
-		throw new AssertionError();
-	}
-
-	@ExpectPlatform
-	public static void shareView(UUID targetId, BookData book) {
+	public static void sendToServer(Fragment fragment) {
 		throw new AssertionError();
 	}
 
@@ -30,12 +24,7 @@ public final class PlatformNetwork {
 	}
 
 	@ExpectPlatform
-	public static void sendOffer(ServerPlayer player, String fromName, BookData book) {
-		throw new AssertionError();
-	}
-
-	@ExpectPlatform
-	public static void sendOpen(ServerPlayer player, String fromName, BookData book) {
+	public static void sendToPlayer(ServerPlayer player, Fragment fragment) {
 		throw new AssertionError();
 	}
 }

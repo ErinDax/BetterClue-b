@@ -17,7 +17,7 @@ public abstract class LecternScreenMixin {
 	private LecternMenu menu;
 
 	@Inject(method = "bookChanged", at = @At("HEAD"))
-	private void betterclue$onLecternBookChanged(CallbackInfo ignored) {
-		CollectHandler.onBookOpened(this.menu.getBook());
+	private void betterclue$collectLecternBook(CallbackInfo ci) {
+		CollectHandler.collect(this.menu.getBook());
 	}
 }

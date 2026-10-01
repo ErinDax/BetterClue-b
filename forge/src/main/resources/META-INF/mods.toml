@@ -1,14 +1,13 @@
 modLoader="javafml"
 loaderVersion="[47,)"
-license="All Rights Reserved"
+license="GPL-2.0"
 
 [[mods]]
 modId="betterclue"
 version="${version}"
-displayName="更好的线索"
+displayName="BetterClue"
 logoFile="assets/betterclue/icon.png"
-authors="202037994@qq.com"
-description='''更好的线索'''
+displayTest="IGNORE_ALL_VERSION"
 
 [[dependencies.betterclue]]
 modId="forge"
@@ -20,6 +19,6 @@ side="BOTH"
 [[dependencies.betterclue]]
 modId="minecraft"
 mandatory=true
-versionRange="[1.20.1,1.21)"
+versionRange="[1.20.1,1.20.2)"
 ordering="NONE"
 side="BOTH"

@@ -2,15 +2,15 @@ plugins {
 	id 'com.gradleup.shadow'
 }
 
-architectury {
-	platformSetupLoomIde()
-	forge()
-}
-
 loom {
 	forge {
 		mixinConfig 'betterclue.mixins.json'
 	}
+}
+
+architectury {
+	platformSetupLoomIde()
+	forge()
 }
 
 configurations {
@@ -37,7 +37,7 @@ processResources {
 	filteringCharset = 'UTF-8'
 	inputs.property 'version', project.version
 	filesMatching('META-INF/mods.toml') {
-		expand version: project.version
+		expand version: inputs.properties.version
 	}
 }
 
@@ -47,5 +47,5 @@ shadowJar {
 }
 
 remapJar {
-	input.set shadowJar.archiveFile
+	inputFile.set shadowJar.archiveFile
 }
