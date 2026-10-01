@@ -1,14 +1,12 @@
 modLoader="javafml"
-loaderVersion="[1,)"
-license="All Rights Reserved"
+loaderVersion="[4,)"
+license="GPL-2.0"
 
 [[mods]]
 modId="betterclue"
 version="${version}"
-displayName="更好的线索"
+displayName="BetterClue"
 logoFile="assets/betterclue/icon.png"
-authors="202037994@qq.com"
-description='''更好的线索'''
 
 [[mixins]]
 config="betterclue.mixins.json"
@@ -16,7 +14,7 @@ config="betterclue.mixins.json"
 [[dependencies.betterclue]]
 modId="neoforge"
 type="required"
-versionRange="[21.4.0,)"
+versionRange="[21.4,)"
 ordering="NONE"
 side="BOTH"
 

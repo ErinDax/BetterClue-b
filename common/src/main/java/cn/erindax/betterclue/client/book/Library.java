@@ -1,42 +1,50 @@
 package cn.erindax.betterclue.client.book;
 
 import cn.erindax.betterclue.BetterClue;
+import cn.erindax.betterclue.client.Texts;
+import cn.erindax.betterclue.network.BookData;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.List;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtAccounter;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.Tag;
-import org.slf4j.Logger;
 
 public final class Library {
 	public static final int MAX_CATEGORIES = 16;
 	public static final int MAX_BOOKS_PER_CATEGORY = 64;
-	private static final String DEFAULT_CATEGORY_NAME = "默认分类";
 	public static final int MAX_CATEGORY_NAME_LENGTH = 16;
-
-	private static final Logger LOGGER = BetterClue.LOGGER;
-	private static final String SAVE_FILE_NAME = "books.nbt";
-
+	public static final int MAX_REMARK_LENGTH = 64;
+	private static final String FILE_NAME = "books.nbt";
+	private static final int VERSION = 1;
 	private static final Library INSTANCE = new Library();
 
 	private final List<Category> categories = new ArrayList<>();
-	private String preferredCategoryName = DEFAULT_CATEGORY_NAME;
-	private boolean loaded = false;
+	private String preferredCategory = "";
+	private boolean loaded;
+	private boolean writable = true;
 
 	private Library() {
 	}
 
 	public static Library get() {
+		INSTANCE.ensureLoaded();
 		return INSTANCE;
 	}
 
@@ -47,282 +55,260 @@ public final class Library {
 		NO_CATEGORY
 	}
 
-	public synchronized void load() {
-		if (this.loaded) {
-			return;
-		}
-		this.loaded = true;
-		try {
-			Path path = getSavePath();
-			CompoundTag root = Files.exists(path) ? NbtIo.readCompressed(path, NbtAccounter.unlimitedHeap()) : null;
-			if (root == null) {
-				ensureDefaultCategory();
-				return;
-			}
-			if (root.getInt("Version") >= 1) {
-				String preferred = root.getString("PreferredCategory");
-				this.preferredCategoryName = preferred.isEmpty() ? DEFAULT_CATEGORY_NAME : preferred;
-				ListTag catList = root.getList("Categories", Tag.TAG_COMPOUND);
-				for (int i = 0; i < catList.size(); i++) {
-					this.categories.add(Category.fromTag(catList.getCompound(i)));
-				}
-			}
-			ensureDefaultCategory();
-		} catch (IOException e) {
-			LOGGER.warn("无法读取书籍收集存档，将使用空存档: {}", e.toString());
-			ensureDefaultCategory();
-		}
-	}
-
-	private void ensureLoaded() {
-		if (!this.loaded) {
-			this.load();
-		}
-	}
-
-	private synchronized void save() {
-		try {
-			Path path = getSavePath();
-			Files.createDirectories(path.getParent());
-			CompoundTag root = new CompoundTag();
-			root.putInt("Version", 1);
-			root.putString("PreferredCategory", this.preferredCategoryName);
-			ListTag catList = new ListTag();
-			for (Category category : this.categories) {
-				catList.add(category.toTag());
-			}
-			root.put("Categories", catList);
-			NbtIo.writeCompressed(root, path);
-		} catch (IOException e) {
-			LOGGER.warn("保存书籍收集存档失败: {}", e.toString());
-		}
-	}
-
-	private static Path getSavePath() {
-		return Minecraft.getInstance().gameDirectory.toPath().resolve(BetterClue.MOD_ID).resolve(SAVE_FILE_NAME);
-	}
-
-	private void ensureDefaultCategory() {
-		if (this.categories.isEmpty()) {
-			this.categories.add(new Category(DEFAULT_CATEGORY_NAME));
-		}
-	}
-
-	public synchronized List<Category> categories() {
-		ensureLoaded();
+	public List<Category> categories() {
 		return Collections.unmodifiableList(this.categories);
 	}
 
-	public synchronized Category category(int index) {
-		ensureLoaded();
-		if (index < 0 || index >= this.categories.size()) {
-			return null;
-		}
-		return this.categories.get(index);
+	public Category category(int index) {
+		return index >= 0 && index < this.categories.size() ? this.categories.get(index) : null;
 	}
 
-	public synchronized void setPreferredCategoryName(String name) {
-		ensureLoaded();
-		if (name == null || name.isEmpty()) {
-			return;
-		}
-		this.preferredCategoryName = name;
-		this.save();
-	}
-
-	public synchronized int preferredCategoryIndex() {
-		ensureLoaded();
+	public int preferredCategoryIndex() {
 		if (this.categories.isEmpty()) {
 			return -1;
 		}
 		for (int i = 0; i < this.categories.size(); i++) {
-			if (this.categories.get(i).name.equals(this.preferredCategoryName)) {
+			if (this.categories.get(i).name.equals(this.preferredCategory)) {
 				return i;
 			}
 		}
 		return 0;
 	}
 
-	public synchronized AddResult addBook(String title, String author, List<String> pages) {
-		ensureLoaded();
-		String safeTitle = title == null ? "" : title;
-		String safeAuthor = author == null ? "" : author;
-		List<String> safePages = pages == null ? List.of() : new ArrayList<>(pages);
-		String key = keyOf(safeTitle, safeAuthor, safePages);
-		for (Category category : this.categories) {
-			for (Book book : category.books) {
-				if (book.key().equals(key)) {
-					return AddResult.ALREADY_COLLECTED;
-				}
-			}
-		}
-		Category target = findPreferredCategory();
-		if (target == null) {
-			return AddResult.NO_CATEGORY;
-		}
-		if (target.books.size() >= MAX_BOOKS_PER_CATEGORY) {
-			return AddResult.CATEGORY_FULL;
-		}
-		target.books.add(new Book(key, safeTitle, safeAuthor, safePages, System.currentTimeMillis(), ""));
-		this.save();
-		return AddResult.ADDED;
-	}
-
-	private static String keyOf(String title, String author, List<String> pages) {
-		StringBuilder sb = new StringBuilder();
-		sb.append(title).append('\u0001');
-		sb.append(author).append('\u0001');
-		for (String page : pages) {
-			sb.append(page).append('\u0002');
-		}
-		try {
-			MessageDigest digest = MessageDigest.getInstance("SHA-256");
-			byte[] bytes = digest.digest(sb.toString().getBytes(StandardCharsets.UTF_8));
-			StringBuilder hex = new StringBuilder();
-			for (byte b : bytes) {
-				hex.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
-			}
-			return hex.toString();
-		} catch (NoSuchAlgorithmException e) {
-			return Integer.toHexString(sb.toString().hashCode());
+	public void setPreferredCategory(String name) {
+		if (name != null && !name.isEmpty() && !name.equals(this.preferredCategory)) {
+			this.preferredCategory = name;
+			this.save();
 		}
 	}
 
-	private Category findPreferredCategory() {
-		for (Category category : this.categories) {
-			if (category.name.equals(this.preferredCategoryName)) {
-				return category;
-			}
+	public AddResult addBook(BookData book) {
+		AddResult result = this.insert(book);
+		if (result == AddResult.ADDED) {
+			this.save();
 		}
-		return this.categories.isEmpty() ? null : this.categories.get(0);
+		return result;
 	}
 
-	public synchronized boolean createCategory(String name) {
-		ensureLoaded();
+	public List<AddResult> addBooks(List<BookData> books) {
+		List<AddResult> results = new ArrayList<>(books.size());
+		for (BookData book : books) {
+			results.add(this.insert(book));
+		}
+		if (results.contains(AddResult.ADDED)) {
+			this.save();
+		}
+		return results;
+	}
+
+	public boolean createCategory(String name) {
 		String trimmed = trimName(name);
-		if (trimmed == null) {
+		if (trimmed == null || this.categories.size() >= MAX_CATEGORIES || this.indexOf(trimmed) >= 0) {
 			return false;
-		}
-		if (this.categories.size() >= MAX_CATEGORIES) {
-			return false;
-		}
-		for (Category category : this.categories) {
-			if (category.name.equals(trimmed)) {
-				return false;
-			}
 		}
 		this.categories.add(new Category(trimmed));
 		this.save();
 		return true;
 	}
 
-	public synchronized boolean renameCategory(int index, String newName) {
-		ensureLoaded();
-		String trimmed = trimName(newName);
-		Category category = index >= 0 && index < this.categories.size() ? this.categories.get(index) : null;
-		if (trimmed == null || category == null) {
+	public boolean renameCategory(int index, String name) {
+		Category category = this.category(index);
+		String trimmed = trimName(name);
+		if (category == null || trimmed == null) {
 			return false;
 		}
-		for (int i = 0; i < this.categories.size(); i++) {
-			if (i != index && this.categories.get(i).name.equals(trimmed)) {
-				return false;
-			}
+		int existing = this.indexOf(trimmed);
+		if (existing >= 0 && existing != index) {
+			return false;
 		}
-		String oldName = category.name;
+		if (category.name.equals(this.preferredCategory)) {
+			this.preferredCategory = trimmed;
+		}
 		category.name = trimmed;
-		if (oldName.equals(this.preferredCategoryName)) {
-			this.preferredCategoryName = trimmed;
-		}
 		this.save();
 		return true;
 	}
 
-	public synchronized void deleteCategory(int index) {
-		ensureLoaded();
-		if (index < 0 || index >= this.categories.size()) {
+	public void deleteCategory(int index) {
+		if (this.category(index) == null) {
 			return;
 		}
 		this.categories.remove(index);
-		if (this.categories.isEmpty()) {
-			this.categories.add(new Category(DEFAULT_CATEGORY_NAME));
-		}
-		if (this.categories.stream().noneMatch(c -> c.name.equals(this.preferredCategoryName))) {
-			this.preferredCategoryName = this.categories.get(0).name;
+		this.ensureCategory();
+		if (this.indexOf(this.preferredCategory) < 0) {
+			this.preferredCategory = this.categories.get(0).name;
 		}
 		this.save();
 	}
 
-	public synchronized boolean moveCategory(int fromIndex, int toIndex) {
-		ensureLoaded();
-		if (fromIndex < 0 || fromIndex >= this.categories.size() || toIndex < 0 || toIndex >= this.categories.size() || fromIndex == toIndex) {
-			return false;
+	public void moveCategory(int from, int to) {
+		if (from == to || this.category(from) == null || this.category(to) == null) {
+			return;
 		}
-		Category category = this.categories.remove(fromIndex);
-		this.categories.add(toIndex, category);
+		this.categories.add(to, this.categories.remove(from));
 		this.save();
-		return true;
 	}
 
-	public synchronized boolean renameBook(int categoryIndex, int bookIndex, String remark) {
-		ensureLoaded();
-		Category category = category(categoryIndex);
+	public void setRemark(int categoryIndex, int bookIndex, String remark) {
+		Category category = this.category(categoryIndex);
 		if (category == null || bookIndex < 0 || bookIndex >= category.books.size()) {
-			return false;
+			return;
 		}
 		String trimmed = remark == null ? "" : remark.trim();
-		if (trimmed.length() > 64) {
-			trimmed = trimmed.substring(0, 64);
+		if (trimmed.length() > MAX_REMARK_LENGTH) {
+			trimmed = trimmed.substring(0, MAX_REMARK_LENGTH);
 		}
-		Book book = category.books.get(bookIndex);
-		category.books.set(bookIndex, new Book(book.key(), book.title(), book.author(), book.pages(), book.collectedAt(), trimmed));
+		category.books.set(bookIndex, category.books.get(bookIndex).withRemark(trimmed));
 		this.save();
-		return true;
 	}
 
-	public synchronized boolean deleteBook(int categoryIndex, int bookIndex) {
-		ensureLoaded();
-		Category category = category(categoryIndex);
+	public void deleteBook(int categoryIndex, int bookIndex) {
+		Category category = this.category(categoryIndex);
 		if (category == null || bookIndex < 0 || bookIndex >= category.books.size()) {
-			return false;
+			return;
 		}
 		category.books.remove(bookIndex);
 		this.save();
-		return true;
 	}
 
-	public synchronized boolean moveBook(int categoryIndex, int fromIndex, int toIndex) {
-		ensureLoaded();
-		Category category = category(categoryIndex);
-		if (category == null || fromIndex < 0 || fromIndex >= category.books.size()) {
-			return false;
+	public void moveBook(int categoryIndex, int from, int to) {
+		Category category = this.category(categoryIndex);
+		if (category == null || from < 0 || from >= category.books.size()) {
+			return;
 		}
-		toIndex = Math.max(0, Math.min(toIndex, category.books.size() - 1));
-		if (fromIndex == toIndex) {
-			return false;
+		int target = Math.max(0, Math.min(to, category.books.size() - 1));
+		if (from == target) {
+			return;
 		}
-		Book book = category.books.remove(fromIndex);
-		category.books.add(toIndex, book);
+		category.books.add(target, category.books.remove(from));
 		this.save();
-		return true;
 	}
 
-	public synchronized boolean moveBookToCategory(int sourceCategoryIndex, int bookIndex, int targetCategoryIndex) {
-		ensureLoaded();
-		Category source = category(sourceCategoryIndex);
-		Category target = category(targetCategoryIndex);
-		if (source == null || target == null || bookIndex < 0 || bookIndex >= source.books.size()) {
-			return false;
+	public void moveBookToCategory(int sourceIndex, int bookIndex, int targetIndex) {
+		Category source = this.category(sourceIndex);
+		Category target = this.category(targetIndex);
+		if (source == null || target == null || sourceIndex == targetIndex || bookIndex < 0 || bookIndex >= source.books.size() || target.books.size() >= MAX_BOOKS_PER_CATEGORY) {
+			return;
 		}
-		if (sourceCategoryIndex == targetCategoryIndex) {
-			return moveBook(sourceCategoryIndex, bookIndex, target.books.size() - 1);
+		target.books.add(source.books.remove(bookIndex));
+		this.save();
+	}
+
+	private AddResult insert(BookData book) {
+		String key = keyOf(book);
+		for (Category category : this.categories) {
+			for (Book existing : category.books) {
+				if (existing.key().equals(key)) {
+					return AddResult.ALREADY_COLLECTED;
+				}
+			}
+		}
+		Category target = this.category(this.preferredCategoryIndex());
+		if (target == null) {
+			return AddResult.NO_CATEGORY;
 		}
 		if (target.books.size() >= MAX_BOOKS_PER_CATEGORY) {
+			return AddResult.CATEGORY_FULL;
+		}
+		target.books.add(new Book(key, book.title(), book.author(), book.pages(), System.currentTimeMillis(), ""));
+		return AddResult.ADDED;
+	}
+
+	private int indexOf(String name) {
+		for (int i = 0; i < this.categories.size(); i++) {
+			if (this.categories.get(i).name.equals(name)) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private void ensureCategory() {
+		if (this.categories.isEmpty()) {
+			this.categories.add(new Category(I18n.get("betterclue.category.default")));
+		}
+	}
+
+	private void ensureLoaded() {
+		if (this.loaded) {
+			return;
+		}
+		this.loaded = true;
+		Path path = savePath();
+		if (Files.exists(path)) {
+			try {
+				this.read(NbtIo.readCompressed(new ByteArrayInputStream(Files.readAllBytes(path)), NbtAccounter.unlimitedHeap()));
+			} catch (IOException | RuntimeException e) {
+				BetterClue.LOGGER.error("Failed to read {}", path, e);
+				this.categories.clear();
+				this.preferredCategory = "";
+				this.writable = backup(path);
+			}
+		}
+		this.ensureCategory();
+	}
+
+	private void read(CompoundTag root) throws IOException {
+		int version = root.getInt("Version");
+		if (version != VERSION) {
+			throw new IOException("Unsupported library version " + version);
+		}
+		this.preferredCategory = root.getString("PreferredCategory");
+		ListTag list = root.getList("Categories", Tag.TAG_COMPOUND);
+		for (int i = 0; i < list.size(); i++) {
+			this.categories.add(Category.fromTag(list.getCompound(i)));
+		}
+	}
+
+	private CompoundTag write() {
+		CompoundTag root = new CompoundTag();
+		root.putInt("Version", VERSION);
+		root.putString("PreferredCategory", this.preferredCategory);
+		ListTag list = new ListTag();
+		for (Category category : this.categories) {
+			list.add(category.toTag());
+		}
+		root.put("Categories", list);
+		return root;
+	}
+
+	private void save() {
+		if (!this.writable) {
+			return;
+		}
+		Path path = savePath();
+		Path temp = path.resolveSibling(FILE_NAME + ".tmp");
+		try {
+			Files.createDirectories(path.getParent());
+			ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+			NbtIo.writeCompressed(this.write(), buffer);
+			Files.write(temp, buffer.toByteArray(), StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE, StandardOpenOption.SYNC);
+			try {
+				Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+			} catch (AtomicMoveNotSupportedException e) {
+				Files.move(temp, path, StandardCopyOption.REPLACE_EXISTING);
+			}
+		} catch (IOException e) {
+			BetterClue.LOGGER.error("Failed to save {}", path, e);
+		}
+	}
+
+	private static boolean backup(Path path) {
+		Path target = path.resolveSibling(FILE_NAME + ".broken-" + System.currentTimeMillis());
+		try {
+			Files.move(path, target);
+			BetterClue.LOGGER.warn("Moved unreadable library to {}", target);
+			Texts.toast("betterclue.library.backed_up");
+			return true;
+		} catch (IOException e) {
+			BetterClue.LOGGER.error("Failed to back up {}, changes will not be saved", path, e);
+			Texts.toast("betterclue.library.read_only");
 			return false;
 		}
-		Book book = source.books.remove(bookIndex);
-		target.books.add(book);
-		this.save();
-		return true;
+	}
+
+	private static Path savePath() {
+		return Minecraft.getInstance().gameDirectory.toPath().resolve(BetterClue.MOD_ID).resolve(FILE_NAME);
 	}
 
 	private static String trimName(String name) {
@@ -330,9 +316,20 @@ public final class Library {
 			return null;
 		}
 		String trimmed = name.trim();
-		if (trimmed.isEmpty() || trimmed.length() > MAX_CATEGORY_NAME_LENGTH) {
-			return null;
+		return trimmed.isEmpty() || trimmed.length() > MAX_CATEGORY_NAME_LENGTH ? null : trimmed;
+	}
+
+	private static String keyOf(BookData book) {
+		StringBuilder builder = new StringBuilder();
+		builder.append(book.title()).append('\u0001').append(book.author()).append('\u0001');
+		for (String page : book.pages()) {
+			builder.append(page).append('\u0002');
 		}
-		return trimmed;
+		try {
+			byte[] digest = MessageDigest.getInstance("SHA-256").digest(builder.toString().getBytes(StandardCharsets.UTF_8));
+			return HexFormat.of().formatHex(digest);
+		} catch (NoSuchAlgorithmException e) {
+			throw new IllegalStateException(e);
+		}
 	}
 }

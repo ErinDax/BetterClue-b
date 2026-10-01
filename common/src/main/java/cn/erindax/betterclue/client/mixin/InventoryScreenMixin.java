@@ -16,10 +16,9 @@ public abstract class InventoryScreenMixin extends Screen {
 	}
 
 	@Inject(method = "init", at = @At("TAIL"))
-	private void betterclue$addPanel(CallbackInfo ignored) {
-		if (BookPanel.alreadyPresent(this)) {
-			return;
+	private void betterclue$addPanel(CallbackInfo ci) {
+		if (!BookPanel.alreadyPresent(this)) {
+			this.addRenderableWidget(new BookPanel(this.width, this.height, 176));
 		}
-		this.addRenderableWidget(new BookPanel(this.width, this.height, 176));
 	}
 }

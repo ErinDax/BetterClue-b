@@ -1,11 +1,11 @@
 package cn.erindax.betterclue.client.panel;
 
-import cn.erindax.betterclue.BetterClue;
+import cn.erindax.betterclue.client.ShareHandler;
+import cn.erindax.betterclue.client.Texts;
+import cn.erindax.betterclue.client.book.Book;
+import cn.erindax.betterclue.client.book.BookExporter;
 import cn.erindax.betterclue.client.book.Category;
 import cn.erindax.betterclue.client.book.Library;
-import cn.erindax.betterclue.client.book.Book;
-import cn.erindax.betterclue.client.CollectHandler;
-import cn.erindax.betterclue.client.ShareHandler;
 import cn.erindax.betterclue.client.gui.BookReadScreen;
 import cn.erindax.betterclue.client.gui.RenamePromptScreen;
 import java.util.ArrayList;
@@ -18,7 +18,12 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.narration.NarratedElementType;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
 
 public class BookPanel extends AbstractWidget {
@@ -31,36 +36,55 @@ public class BookPanel extends AbstractWidget {
 	private static final int BOOKS_HEADER_HEIGHT = 12;
 	private static final int PANEL_EDGE = 3;
 	private static final int ACTION_WIDTH = 12;
-	private static final int CAT_SHARE_X = 45;
-	private static final int CAT_RENAME_X = 32;
-	private static final int CAT_DELETE_X = 19;
-	private static final int BOOK_SHARE_X = 69;
-	private static final int BOOK_RENAME_X = 56;
-	private static final int BOOK_EXPORT_X = 43;
-	private static final int BOOK_DELETE_X = 30;
+	private static final Action[] CATEGORY_ACTIONS = {Action.SHARE_CATEGORY, Action.RENAME_CATEGORY, Action.DELETE_CATEGORY};
+	private static final Action[] BOOK_ACTIONS = {Action.SHARE_BOOK, Action.REMARK_BOOK, Action.EXPORT_BOOK, Action.DELETE_BOOK};
 
 	private final int panelHeight;
 	private final int catAreaHeight;
 	private final Font font;
 	private boolean expanded = true;
-	private int selectedCategoryIndex = -1;
-	private int categoryScroll = 0;
-	private int bookScroll = 0;
+	private int selectedCategoryIndex;
+	private int categoryScroll;
+	private int bookScroll;
+	private Component hoveredTooltip;
 
-	private boolean pressArmed = false;
-	private boolean dragging = false;
+	private boolean pressArmed;
+	private boolean dragging;
 	private DragKind dragKind;
 	private int dragSourceIndex;
 	private double dragStartY;
 	private double dragCurrentY;
-	private boolean barDragging = false;
-	private boolean barOnCategories = false;
+	private boolean barDragging;
+	private boolean barOnCategories;
 	private double barGrab;
 
-	private enum DragKind { CATEGORY, BOOK }
+	private enum DragKind {
+		CATEGORY,
+		BOOK
+	}
+
+	private enum Action {
+		SHARE_CATEGORY("share", "share_category", 45),
+		RENAME_CATEGORY("rename", "rename_category", 32),
+		DELETE_CATEGORY("delete", "delete_category", 19),
+		SHARE_BOOK("share", "share_book", 69),
+		REMARK_BOOK("rename", "remark_book", 56),
+		EXPORT_BOOK("export", "export_book", 43),
+		DELETE_BOOK("delete", "delete_book", 30);
+
+		private final String label;
+		private final Component tooltip;
+		private final int fromRight;
+
+		Action(String label, String tooltip, int fromRight) {
+			this.label = "betterclue.panel.action." + label;
+			this.tooltip = Component.translatable("betterclue.panel.tooltip." + tooltip);
+			this.fromRight = fromRight;
+		}
+	}
 
 	public BookPanel(int screenWidth, int screenHeight, int containerWidth) {
-		super(0, 0, computePanelWidth(screenWidth, containerWidth), screenHeight, Component.literal(BetterClue.DISPLAY_NAME));
+		super(0, 0, computePanelWidth(screenWidth, containerWidth), screenHeight, Component.translatable("betterclue.name"));
 		this.font = Minecraft.getInstance().font;
 		this.panelHeight = screenHeight;
 		int available = this.panelHeight - HEADER_HEIGHT - NEW_CAT_HEIGHT - BOOKS_HEADER_HEIGHT - PANEL_EDGE - 6;
@@ -84,8 +108,7 @@ public class BookPanel extends AbstractWidget {
 
 	private static int computePanelWidth(int screenWidth, int containerWidth) {
 		int leftPos = (screenWidth - containerWidth) / 2;
-		int maxWidth = leftPos - 10;
-		return Math.max(64, Math.min(150, maxWidth));
+		return Math.max(64, Math.min(150, leftPos - 10));
 	}
 
 	private int catAreaTop() {
@@ -108,6 +131,10 @@ public class BookPanel extends AbstractWidget {
 		return this.getY() + this.panelHeight - PANEL_EDGE;
 	}
 
+	private int exportAllWidth() {
+		return this.font.width(I18n.get("betterclue.panel.export_all")) + 4;
+	}
+
 	private boolean inCollapsedStrip(double mx, double my) {
 		int stripY = this.getY() + this.panelHeight / 2 - COLLAPSED_STRIP_HEIGHT / 2;
 		return mx >= 0 && mx < COLLAPSED_STRIP_WIDTH && my >= stripY && my < stripY + COLLAPSED_STRIP_HEIGHT;
@@ -119,11 +146,11 @@ public class BookPanel extends AbstractWidget {
 	}
 
 	@Override
-	protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float ignored) {
-		if (!this.expanded) {
-			this.renderCollapsed(guiGraphics, mouseX, mouseY);
-		} else {
+	protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+		if (this.expanded) {
 			this.renderExpanded(guiGraphics, mouseX, mouseY);
+		} else {
+			this.renderCollapsed(guiGraphics, mouseX, mouseY);
 		}
 	}
 
@@ -139,6 +166,7 @@ public class BookPanel extends AbstractWidget {
 	private void renderExpanded(GuiGraphics guiGraphics, int mouseX, int mouseY) {
 		List<Category> categories = Library.get().categories();
 		this.clampSelection(categories);
+		this.hoveredTooltip = null;
 		int x = this.getX();
 		int w = this.getWidth();
 
@@ -158,7 +186,7 @@ public class BookPanel extends AbstractWidget {
 				continue;
 			}
 			boolean selected = i == this.selectedCategoryIndex;
-			boolean hover = inRect(mouseX, mouseY, x + 1, rowY, w - 8, CAT_ROW_HEIGHT);
+			boolean hover = inRect(mouseX, mouseY, x + 1, rowY, w - 8, CAT_ROW_HEIGHT) && mouseY >= catTop && mouseY < catTop + this.catAreaHeight;
 			if (selected) {
 				guiGraphics.fill(x + 1, rowY, x + w - 6, rowY + CAT_ROW_HEIGHT, 0x804A6A8A);
 			} else if (hover) {
@@ -168,33 +196,33 @@ public class BookPanel extends AbstractWidget {
 			String label = category.name + " (" + category.books.size() + ")";
 			guiGraphics.drawString(this.font, this.font.plainSubstrByWidth(label, w - 69), x + 4, rowY + 2, selected ? 0xFFFFFF : 0xD0D0D0);
 			if (hover) {
-				this.renderCategoryActions(guiGraphics, rowY, mouseX, mouseY);
+				this.drawActions(guiGraphics, CATEGORY_ACTIONS, rowY, mouseX, mouseY);
 			}
 		}
 		guiGraphics.disableScissor();
-		int catMaxPx = this.categoryMaxScrollPx(categories.size());
-		int catBarX = this.scrollBarX();
-		boolean catBarHot = this.barDragging && this.barOnCategories || ScrollBar.hit(catBarX, catTop, this.catAreaHeight, mouseX, mouseY);
-		ScrollBar.draw(guiGraphics, catBarX, catTop, this.catAreaHeight, this.categoryScroll, catMaxPx, catBarHot);
+		int barX = this.scrollBarX();
+		boolean catBarHot = this.barDragging && this.barOnCategories || ScrollBar.hit(barX, catTop, this.catAreaHeight, mouseX, mouseY);
+		ScrollBar.draw(guiGraphics, barX, catTop, this.catAreaHeight, this.categoryScroll, this.categoryMaxScrollPx(categories.size()), catBarHot);
 
 		int ncTop = this.newCatTop();
 		boolean ncHover = inRect(mouseX, mouseY, x + 2, ncTop, w - 4, NEW_CAT_HEIGHT);
 		guiGraphics.fill(x + 2, ncTop, x + w - 2, ncTop + NEW_CAT_HEIGHT, ncHover ? 0x603A5A3A : 0x40202020);
-		guiGraphics.drawString(this.font, "＋ 新建分类", x + 6, ncTop + 3, ncHover ? 0x90FF90 : 0xA0C0A0);
+		guiGraphics.drawString(this.font, I18n.get("betterclue.panel.new_category"), x + 6, ncTop + 3, ncHover ? 0x90FF90 : 0xA0C0A0);
 
 		int bhTop = this.booksHeaderTop();
-		guiGraphics.drawString(this.font, this.bookHeaderLabel(), x + 4, bhTop + 2, 0xFFFFFF);
-		boolean exportAllHover = inRect(mouseX, mouseY, x + w - 48, bhTop, 46, BOOKS_HEADER_HEIGHT);
-		guiGraphics.drawString(this.font, "全导出", x + w - 44, bhTop + 2, exportAllHover ? 0xFFFFFF : 0xAAAAAA);
+		int exportWidth = this.exportAllWidth();
+		guiGraphics.drawString(this.font, this.font.plainSubstrByWidth(this.bookHeaderLabel(), w - exportWidth - 8), x + 4, bhTop + 2, 0xFFFFFF);
+		boolean exportAllHover = inRect(mouseX, mouseY, x + w - exportWidth - 2, bhTop, exportWidth, BOOKS_HEADER_HEIGHT);
+		guiGraphics.drawString(this.font, I18n.get("betterclue.panel.export_all"), x + w - exportWidth, bhTop + 2, exportAllHover ? 0xFFFFFF : 0xAAAAAA);
 
 		List<Book> books = this.currentBooks();
 		int bTop = this.booksAreaTop();
 		int bBottom = this.booksAreaBottom();
-		int bookAreaHeight = bBottom - bTop;
 		this.bookScroll = Math.max(0, Math.min(this.bookScroll, this.bookMaxScrollPx(books.size())));
 		guiGraphics.enableScissor(x + 1, bTop, x + w - 6, bBottom);
 		if (books.isEmpty()) {
-			guiGraphics.drawString(this.font, this.selectedCategoryIndex < 0 ? "当前无分类" : "该分类暂无书籍", x + 6, bTop + 4, 0x808080);
+			String empty = I18n.get(this.selectedCategoryIndex < 0 ? "betterclue.panel.no_category" : "betterclue.panel.empty");
+			guiGraphics.drawString(this.font, empty, x + 6, bTop + 4, 0x808080);
 		}
 		Book hoveredBook = null;
 		for (int i = 0; i < books.size(); i++) {
@@ -202,25 +230,27 @@ public class BookPanel extends AbstractWidget {
 			if (rowY + BOOK_ROW_HEIGHT < bTop || rowY > bBottom) {
 				continue;
 			}
-			boolean hover = inRect(mouseX, mouseY, x + 1, rowY, w - 8, BOOK_ROW_HEIGHT);
+			boolean hover = inRect(mouseX, mouseY, x + 1, rowY, w - 8, BOOK_ROW_HEIGHT) && mouseY >= bTop && mouseY < bBottom;
 			if (hover) {
 				guiGraphics.fill(x + 1, rowY, x + w - 6, rowY + BOOK_ROW_HEIGHT, 0x40333333);
 			}
 			Book book = books.get(i);
 			guiGraphics.drawString(this.font, this.font.plainSubstrByWidth(book.displayTitle(), w - 77), x + 4, rowY + 3, hover ? 0xFFFFFF : 0xD0D0D0);
 			if (hover) {
-				this.renderBookActions(guiGraphics, rowY, mouseX, mouseY);
-				if (!this.dragging && mouseX < this.actionX(BOOK_SHARE_X)) {
+				this.drawActions(guiGraphics, BOOK_ACTIONS, rowY, mouseX, mouseY);
+				if (!this.dragging && mouseX < this.actionX(Action.SHARE_BOOK)) {
 					hoveredBook = book;
 				}
 			}
 		}
 		guiGraphics.disableScissor();
-		int bookMaxPx = this.bookMaxScrollPx(books.size());
-		int bookBarX = this.scrollBarX();
-		boolean bookBarHot = this.barDragging && !this.barOnCategories || ScrollBar.hit(bookBarX, bTop, bookAreaHeight, mouseX, mouseY);
-		ScrollBar.draw(guiGraphics, bookBarX, bTop, bookAreaHeight, this.bookScroll, bookMaxPx, bookBarHot);
-		if (hoveredBook != null) {
+		int bookAreaHeight = bBottom - bTop;
+		boolean bookBarHot = this.barDragging && !this.barOnCategories || ScrollBar.hit(barX, bTop, bookAreaHeight, mouseX, mouseY);
+		ScrollBar.draw(guiGraphics, barX, bTop, bookAreaHeight, this.bookScroll, this.bookMaxScrollPx(books.size()), bookBarHot);
+
+		if (this.hoveredTooltip != null) {
+			guiGraphics.renderTooltip(this.font, this.hoveredTooltip, mouseX, mouseY);
+		} else if (hoveredBook != null) {
 			this.renderBookTooltip(guiGraphics, hoveredBook, mouseX, mouseY);
 		}
 
@@ -232,58 +262,55 @@ public class BookPanel extends AbstractWidget {
 		}
 	}
 
-	private void renderCategoryActions(GuiGraphics guiGraphics, int rowY, int mouseX, int mouseY) {
-		this.drawSmallAction(guiGraphics, "享", rowY, CAT_SHARE_X, mouseX, mouseY);
-		this.drawSmallAction(guiGraphics, "改", rowY, CAT_RENAME_X, mouseX, mouseY);
-		this.drawSmallAction(guiGraphics, "删", rowY, CAT_DELETE_X, mouseX, mouseY);
+	private void drawActions(GuiGraphics guiGraphics, Action[] actions, int rowY, int mouseX, int mouseY) {
+		for (Action action : actions) {
+			int rectX = this.actionX(action);
+			boolean hover = inRect(mouseX, mouseY, rectX, rowY, ACTION_WIDTH, CAT_ROW_HEIGHT);
+			guiGraphics.drawString(this.font, I18n.get(action.label), rectX + 2, rowY + 2, hover ? 0xFFFFFF : 0x999999);
+			if (hover && !this.dragging) {
+				this.hoveredTooltip = action.tooltip;
+			}
+		}
 	}
 
 	private void renderBookTooltip(GuiGraphics guiGraphics, Book book, int mouseX, int mouseY) {
 		List<Component> lines = new ArrayList<>();
-		lines.add(Component.literal(book.title().isEmpty() ? "无标题" : book.title()));
+		lines.add(Component.literal(Texts.title(book.title())));
 		if (!book.remark().isEmpty()) {
-			lines.add(Component.literal("备注：" + book.remark()).withStyle(ChatFormatting.GRAY));
+			lines.add(Component.translatable("betterclue.book.remark", book.remark()).withStyle(ChatFormatting.GRAY));
 		}
 		guiGraphics.renderComponentTooltip(this.font, lines, mouseX, mouseY);
 	}
 
-	private void renderBookActions(GuiGraphics guiGraphics, int rowY, int mouseX, int mouseY) {
-		this.drawSmallAction(guiGraphics, "享", rowY, BOOK_SHARE_X, mouseX, mouseY);
-		this.drawSmallAction(guiGraphics, "改", rowY, BOOK_RENAME_X, mouseX, mouseY);
-		this.drawSmallAction(guiGraphics, "导", rowY, BOOK_EXPORT_X, mouseX, mouseY);
-		this.drawSmallAction(guiGraphics, "删", rowY, BOOK_DELETE_X, mouseX, mouseY);
+	private int actionX(Action action) {
+		return this.getX() + this.getWidth() - action.fromRight;
 	}
 
-	private void drawSmallAction(GuiGraphics guiGraphics, String text, int rowY, int fromRight, int mouseX, int mouseY) {
-		int rectX = this.actionX(fromRight);
-		boolean hover = inRect(mouseX, mouseY, rectX, rowY, ACTION_WIDTH, CAT_ROW_HEIGHT);
-		guiGraphics.drawString(this.font, text, rectX + 2, rowY + 2, hover ? 0xFFFFFF : 0x999999);
-	}
-
-	private int actionX(int fromRight) {
-		return this.getX() + this.getWidth() - fromRight;
-	}
-
-	private boolean hitAction(double mouseX, int fromRight) {
-		int rectX = this.actionX(fromRight);
-		return mouseX >= rectX && mouseX < rectX + ACTION_WIDTH;
+	private Action actionAt(Action[] actions, double mouseX) {
+		for (Action action : actions) {
+			int rectX = this.actionX(action);
+			if (mouseX >= rectX && mouseX < rectX + ACTION_WIDTH) {
+				return action;
+			}
+		}
+		return null;
 	}
 
 	private String bookHeaderLabel() {
-		Category category = this.selectedCategoryIndex < 0 ? null : Library.get().category(this.selectedCategoryIndex);
+		Category category = Library.get().category(this.selectedCategoryIndex);
 		if (category == null) {
-			return "请选择分类";
+			return I18n.get("betterclue.panel.select_category");
 		}
-		return category.name + " 书籍 " + category.books.size() + "/" + Library.MAX_BOOKS_PER_CATEGORY;
+		return I18n.get("betterclue.panel.books", category.name, category.books.size(), Library.MAX_BOOKS_PER_CATEGORY);
 	}
 
 	private String dragGhostLabel() {
 		if (this.dragKind == DragKind.CATEGORY) {
 			Category category = Library.get().category(this.dragSourceIndex);
-			return category == null ? "移动分类" : "移动: " + category.name;
+			return I18n.get("betterclue.panel.move", category == null ? "" : category.name);
 		}
 		Book book = this.currentBookAt(this.dragSourceIndex);
-		return "移动: " + (book == null ? "无标题" : book.displayTitle());
+		return I18n.get("betterclue.panel.move", book == null ? Texts.title("") : book.displayTitle());
 	}
 
 	@Override
@@ -300,83 +327,64 @@ public class BookPanel extends AbstractWidget {
 		}
 		int x = this.getX();
 		int w = this.getWidth();
-		List<Category> categories = Library.get().categories();
+		Library library = Library.get();
+		List<Category> categories = library.categories();
 		this.clampSelection(categories);
 
 		if (inRect(mouseX, mouseY, x + w - 14, this.getY() + 2, 12, HEADER_HEIGHT - 2)) {
 			this.expanded = false;
 			return true;
 		}
-
 		if (this.clickScrollBar(mouseX, mouseY)) {
 			return true;
 		}
 
 		int catTop = this.catAreaTop();
-		for (int i = 0; i < categories.size(); i++) {
-			int rowY = catTop + i * CAT_ROW_HEIGHT - this.categoryScroll;
-			if (rowY + CAT_ROW_HEIGHT < catTop || rowY > catTop + this.catAreaHeight) {
-				continue;
-			}
-			if (mouseX >= x && mouseX < x + w - 6 && mouseY >= rowY && mouseY < rowY + CAT_ROW_HEIGHT) {
-				if (this.hitAction(mouseX, CAT_SHARE_X)) {
-					ShareHandler.shareCollected(categories.get(i).books);
+		if (mouseY >= catTop && mouseY < catTop + this.catAreaHeight) {
+			for (int i = 0; i < categories.size(); i++) {
+				int rowY = catTop + i * CAT_ROW_HEIGHT - this.categoryScroll;
+				if (mouseX >= x && mouseX < x + w - 6 && mouseY >= rowY && mouseY < rowY + CAT_ROW_HEIGHT) {
+					Action action = this.actionAt(CATEGORY_ACTIONS, mouseX);
+					if (action != null) {
+						this.perform(action, i);
+						return true;
+					}
+					this.selectedCategoryIndex = i;
+					library.setPreferredCategory(categories.get(i).name);
+					this.armPress(DragKind.CATEGORY, i, mouseY);
 					return true;
 				}
-				if (this.hitAction(mouseX, CAT_RENAME_X)) {
-					this.requestRenameCategory(i);
-					return true;
-				}
-				if (this.hitAction(mouseX, CAT_DELETE_X)) {
-					Library.get().deleteCategory(i);
-					return true;
-				}
-				this.selectedCategoryIndex = i;
-				Library.get().setPreferredCategoryName(categories.get(i).name);
-				this.armPress(DragKind.CATEGORY, i, mouseY);
-				return true;
 			}
 		}
 
 		int ncTop = this.newCatTop();
 		if (mouseX >= x && mouseX < x + w && mouseY >= ncTop && mouseY < ncTop + NEW_CAT_HEIGHT) {
-			this.openCreateCategory();
+			this.createCategory();
 			return true;
 		}
 
 		int bhTop = this.booksHeaderTop();
-		if (mouseX >= x + w - 48 && mouseX < x + w && mouseY >= bhTop && mouseY < bhTop + BOOKS_HEADER_HEIGHT) {
-			this.exportAllBooks();
+		int exportWidth = this.exportAllWidth();
+		if (inRect(mouseX, mouseY, x + w - exportWidth - 2, bhTop, exportWidth, BOOKS_HEADER_HEIGHT)) {
+			this.exportAll();
 			return true;
 		}
 
 		List<Book> books = this.currentBooks();
 		int bTop = this.booksAreaTop();
 		int bBottom = this.booksAreaBottom();
-		for (int i = 0; i < books.size(); i++) {
-			int rowY = bTop + i * BOOK_ROW_HEIGHT - this.bookScroll;
-			if (rowY + BOOK_ROW_HEIGHT < bTop || rowY > bBottom) {
-				continue;
-			}
-			if (mouseX >= x && mouseX < x + w - 6 && mouseY >= rowY && mouseY < rowY + BOOK_ROW_HEIGHT) {
-				if (this.hitAction(mouseX, BOOK_SHARE_X)) {
-					ShareHandler.shareCollected(books.get(i));
+		if (mouseY >= bTop && mouseY < bBottom) {
+			for (int i = 0; i < books.size(); i++) {
+				int rowY = bTop + i * BOOK_ROW_HEIGHT - this.bookScroll;
+				if (mouseX >= x && mouseX < x + w - 6 && mouseY >= rowY && mouseY < rowY + BOOK_ROW_HEIGHT) {
+					Action action = this.actionAt(BOOK_ACTIONS, mouseX);
+					if (action != null) {
+						this.perform(action, i);
+						return true;
+					}
+					this.armPress(DragKind.BOOK, i, mouseY);
 					return true;
 				}
-				if (this.hitAction(mouseX, BOOK_RENAME_X)) {
-					this.requestRenameBook(i);
-					return true;
-				}
-				if (this.hitAction(mouseX, BOOK_EXPORT_X)) {
-					this.exportBook(i);
-					return true;
-				}
-				if (this.hitAction(mouseX, BOOK_DELETE_X)) {
-					Library.get().deleteBook(this.selectedCategoryIndex, i);
-					return true;
-				}
-				this.armPress(DragKind.BOOK, i, mouseY);
-				return true;
 			}
 		}
 
@@ -384,18 +392,16 @@ public class BookPanel extends AbstractWidget {
 	}
 
 	@Override
-	public boolean mouseDragged(double ignoredX, double mouseY, int button, double ignoredDeltaX, double ignoredDeltaY) {
+	public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
 		if (button != 0) {
 			return false;
 		}
 		if (this.barDragging) {
 			if (this.barOnCategories) {
-				this.categoryScroll = ScrollBar.scrollAtGrab(
-					this.catAreaTop(), this.catAreaHeight, this.categoryMaxScrollPx(Library.get().categories().size()), mouseY, this.barGrab);
+				this.categoryScroll = ScrollBar.scrollAtGrab(this.catAreaTop(), this.catAreaHeight, this.categoryMaxScrollPx(Library.get().categories().size()), mouseY, this.barGrab);
 			} else {
 				int bTop = this.booksAreaTop();
-				int bookH = this.booksAreaBottom() - bTop;
-				this.bookScroll = ScrollBar.scrollAtGrab(bTop, bookH, this.bookMaxScrollPx(this.currentBooks().size()), mouseY, this.barGrab);
+				this.bookScroll = ScrollBar.scrollAtGrab(bTop, this.booksAreaBottom() - bTop, this.bookMaxScrollPx(this.currentBooks().size()), mouseY, this.barGrab);
 			}
 			return true;
 		}
@@ -428,7 +434,7 @@ public class BookPanel extends AbstractWidget {
 			if (wasDragging) {
 				this.performDrop(mouseX, mouseY, kind, index);
 			} else if (kind == DragKind.BOOK) {
-				this.openBookAt(index);
+				this.openBook(index);
 			}
 			return true;
 		}
@@ -436,13 +442,17 @@ public class BookPanel extends AbstractWidget {
 	}
 
 	@Override
-	public boolean mouseScrolled(double mouseX, double mouseY, double ignoredHorizontal, double verticalAmount) {
-		if (!this.expanded || !this.isMouseOver(mouseX, mouseY)) {
+	public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+		return this.scroll(mouseX, mouseY, verticalAmount);
+	}
+
+	public boolean scroll(double mouseX, double mouseY, double amount) {
+		if (!this.expanded || amount == 0 || !this.isMouseOver(mouseX, mouseY)) {
 			return false;
 		}
-		int delta = (int) Math.round(-verticalAmount);
+		int delta = (int) Math.round(-amount);
 		if (delta == 0) {
-			delta = verticalAmount > 0 ? -1 : 1;
+			delta = amount > 0 ? -1 : 1;
 		}
 		int catTop = this.catAreaTop();
 		if (mouseY >= catTop && mouseY < catTop + this.catAreaHeight) {
@@ -460,7 +470,30 @@ public class BookPanel extends AbstractWidget {
 
 	@Override
 	public void updateWidgetNarration(NarrationElementOutput narrationElementOutput) {
-		narrationElementOutput.add(NarratedElementType.TITLE, Component.literal(BetterClue.DISPLAY_NAME));
+		narrationElementOutput.add(NarratedElementType.TITLE, this.getMessage());
+	}
+
+	private void perform(Action action, int index) {
+		Library library = Library.get();
+		switch (action) {
+			case SHARE_CATEGORY -> {
+				Category category = library.category(index);
+				if (category != null) {
+					ShareHandler.shareNearby(category.books);
+				}
+			}
+			case RENAME_CATEGORY -> this.renameCategory(index);
+			case DELETE_CATEGORY -> this.deleteCategory(index);
+			case SHARE_BOOK -> {
+				Book book = this.currentBookAt(index);
+				if (book != null) {
+					ShareHandler.shareNearby(List.of(book));
+				}
+			}
+			case REMARK_BOOK -> this.editRemark(index);
+			case EXPORT_BOOK -> this.exportBook(index);
+			case DELETE_BOOK -> this.deleteBook(index);
+		}
 	}
 
 	private void armPress(DragKind kind, int index, double mouseY) {
@@ -473,25 +506,24 @@ public class BookPanel extends AbstractWidget {
 	}
 
 	private void performDrop(double mouseX, double mouseY, DragKind kind, int sourceIndex) {
-		Library collector = Library.get();
-		int x = this.getX();
-		if (mouseX < x || mouseX >= x + this.getWidth()) {
+		if (mouseX < this.getX() || mouseX >= this.getX() + this.getWidth()) {
 			return;
 		}
+		Library library = Library.get();
 		int targetCategory = this.categoryIndexAt(mouseY);
 		if (kind == DragKind.CATEGORY) {
 			if (targetCategory >= 0 && targetCategory != sourceIndex) {
-				collector.moveCategory(sourceIndex, targetCategory);
+				library.moveCategory(sourceIndex, targetCategory);
 			}
 			return;
 		}
 		if (targetCategory >= 0 && targetCategory != this.selectedCategoryIndex) {
-			collector.moveBookToCategory(this.selectedCategoryIndex, sourceIndex, targetCategory);
-		} else {
-			int targetRow = this.bookIndexAt(mouseY);
-			if (targetRow >= 0 && targetRow != sourceIndex) {
-				collector.moveBook(this.selectedCategoryIndex, sourceIndex, targetRow);
-			}
+			library.moveBookToCategory(this.selectedCategoryIndex, sourceIndex, targetCategory);
+			return;
+		}
+		int targetRow = this.bookIndexAt(mouseY);
+		if (targetRow >= 0 && targetRow != sourceIndex) {
+			library.moveBook(this.selectedCategoryIndex, sourceIndex, targetRow);
 		}
 	}
 
@@ -515,9 +547,6 @@ public class BookPanel extends AbstractWidget {
 	}
 
 	private List<Book> currentBooks() {
-		if (this.selectedCategoryIndex < 0) {
-			return List.of();
-		}
 		Category category = Library.get().category(this.selectedCategoryIndex);
 		return category == null ? List.of() : category.books;
 	}
@@ -533,10 +562,7 @@ public class BookPanel extends AbstractWidget {
 			return;
 		}
 		if (this.selectedCategoryIndex < 0 || this.selectedCategoryIndex >= categories.size()) {
-			this.selectedCategoryIndex = Library.get().preferredCategoryIndex();
-			if (this.selectedCategoryIndex < 0) {
-				this.selectedCategoryIndex = 0;
-			}
+			this.selectedCategoryIndex = Math.max(0, Library.get().preferredCategoryIndex());
 			this.ensureSelectedCategoryVisible();
 		}
 	}
@@ -554,50 +580,78 @@ public class BookPanel extends AbstractWidget {
 		}
 	}
 
-	private void openBookAt(int index) {
+	private void openBook(int index) {
 		Book book = this.currentBookAt(index);
-		if (book == null) {
-			return;
+		if (book != null) {
+			Minecraft.getInstance().setScreen(new BookReadScreen(book.pages(), BookPanel::openInventory));
 		}
-		Minecraft.getInstance().setScreen(new BookReadScreen(book.pages(), CollectHandler::openPlayerInventory));
 	}
 
-	private void requestRenameCategory(int index) {
+	private void createCategory() {
+		Minecraft.getInstance().setScreen(new RenamePromptScreen(
+			Component.translatable("betterclue.prompt.new_category"), "", Library.MAX_CATEGORY_NAME_LENGTH, false,
+			name -> {
+				if (!Library.get().createCategory(name)) {
+					Texts.toast("betterclue.category.create_failed", Library.MAX_CATEGORIES);
+				}
+			}
+		));
+	}
+
+	private void renameCategory(int index) {
 		Category category = Library.get().category(index);
 		if (category == null) {
 			return;
 		}
 		Minecraft.getInstance().setScreen(new RenamePromptScreen(
-			"重命名分类", category.name, Library.MAX_CATEGORY_NAME_LENGTH,
-			newName -> {
-				if (!Library.get().renameCategory(index, newName)) {
-					CollectHandler.showNotice("重命名失败：名称无效或重复");
+			Component.translatable("betterclue.prompt.rename_category"), category.name, Library.MAX_CATEGORY_NAME_LENGTH, false,
+			name -> {
+				if (!Library.get().renameCategory(index, name)) {
+					Texts.toast("betterclue.category.rename_failed");
 				}
 			}
 		));
 	}
 
-	private void openCreateCategory() {
-		Minecraft.getInstance().setScreen(new RenamePromptScreen(
-			"新建分类", "", Library.MAX_CATEGORY_NAME_LENGTH,
-			newName -> {
-				if (!Library.get().createCategory(newName)) {
-					CollectHandler.showNotice("创建失败：名称无效、重复或已达上限(" + Library.MAX_CATEGORIES + ")");
-				}
-			}
-		));
+	private void deleteCategory(int index) {
+		Category category = Library.get().category(index);
+		if (category == null) {
+			return;
+		}
+		if (category.books.isEmpty()) {
+			Library.get().deleteCategory(index);
+			return;
+		}
+		confirm(
+			Component.translatable("betterclue.confirm.delete_category"),
+			Component.translatable("betterclue.confirm.delete_category.detail", category.name, category.books.size()),
+			() -> Library.get().deleteCategory(index)
+		);
 	}
 
-	private void requestRenameBook(int index) {
+	private void editRemark(int index) {
 		Book book = this.currentBookAt(index);
 		if (book == null) {
 			return;
 		}
+		int categoryIndex = this.selectedCategoryIndex;
 		Minecraft.getInstance().setScreen(new RenamePromptScreen(
-			"书籍备注", book.remark(), 64,
-			remark -> Library.get().renameBook(this.selectedCategoryIndex, index, remark),
-			true
+			Component.translatable("betterclue.prompt.remark"), book.remark(), Library.MAX_REMARK_LENGTH, true,
+			remark -> Library.get().setRemark(categoryIndex, index, remark)
 		));
+	}
+
+	private void deleteBook(int index) {
+		Book book = this.currentBookAt(index);
+		if (book == null) {
+			return;
+		}
+		int categoryIndex = this.selectedCategoryIndex;
+		confirm(
+			Component.translatable("betterclue.confirm.delete_book"),
+			Component.translatable("betterclue.confirm.delete_book.detail", Texts.quoted(book.title())),
+			() -> Library.get().deleteBook(categoryIndex, index)
+		);
 	}
 
 	private void exportBook(int index) {
@@ -605,23 +659,50 @@ public class BookPanel extends AbstractWidget {
 		if (book == null) {
 			return;
 		}
-		String path = CollectHandler.exportBook(book);
-		CollectHandler.showNotice(path == null ? "导出失败" : "已导出: " + path);
+		String path = BookExporter.export(book);
+		if (path == null) {
+			Texts.toast("betterclue.export.failed");
+		} else {
+			Texts.toast("betterclue.export.done", path);
+		}
 	}
 
-	private void exportAllBooks() {
+	private void exportAll() {
 		List<Book> books = this.currentBooks();
 		if (books.isEmpty()) {
-			CollectHandler.showNotice("当前分类没有可导出的书");
+			Texts.toast("betterclue.export.empty");
 			return;
 		}
-		int ok = 0;
+		int exported = 0;
 		for (Book book : books) {
-			if (CollectHandler.exportBook(book) != null) {
-				ok++;
+			if (BookExporter.export(book) != null) {
+				exported++;
 			}
 		}
-		CollectHandler.showNotice("已导出 " + ok + " 本书到 betterclue/export/");
+		Texts.toast("betterclue.export.done_many", exported, BookExporter.directory());
+	}
+
+	private static void confirm(Component title, Component detail, Runnable action) {
+		Minecraft minecraft = Minecraft.getInstance();
+		Screen previous = minecraft.screen;
+		minecraft.setScreen(new ConfirmScreen(confirmed -> {
+			if (confirmed) {
+				action.run();
+			}
+			minecraft.setScreen(previous);
+		}, title, detail));
+	}
+
+	private static void openInventory() {
+		Minecraft minecraft = Minecraft.getInstance();
+		LocalPlayer player = minecraft.player;
+		if (player == null) {
+			minecraft.setScreen(null);
+		} else if (player.isCreative()) {
+			minecraft.setScreen(new CreativeModeInventoryScreen(player, player.connection.enabledFeatures(), minecraft.options.operatorItemsTab().get()));
+		} else {
+			minecraft.setScreen(new InventoryScreen(player));
+		}
 	}
 
 	private int scrollBarX() {
@@ -633,26 +714,21 @@ public class BookPanel extends AbstractWidget {
 	}
 
 	private int bookMaxScrollPx(int count) {
-		int height = this.booksAreaBottom() - this.booksAreaTop();
-		return Math.max(0, count * BOOK_ROW_HEIGHT - height);
+		return Math.max(0, count * BOOK_ROW_HEIGHT - (this.booksAreaBottom() - this.booksAreaTop()));
 	}
 
 	private boolean clickScrollBar(double mouseX, double mouseY) {
 		int barX = this.scrollBarX();
-		int catTop = this.catAreaTop();
-		ScrollBar.Click cat = ScrollBar.click(
-			barX, catTop, this.catAreaHeight, this.categoryScroll, this.categoryMaxScrollPx(Library.get().categories().size()), mouseX, mouseY);
-		if (cat != null) {
-			this.categoryScroll = cat.scroll();
+		ScrollBar.Click category = ScrollBar.click(barX, this.catAreaTop(), this.catAreaHeight, this.categoryScroll, this.categoryMaxScrollPx(Library.get().categories().size()), mouseX, mouseY);
+		if (category != null) {
+			this.categoryScroll = category.scroll();
 			this.barDragging = true;
 			this.barOnCategories = true;
-			this.barGrab = cat.grab();
+			this.barGrab = category.grab();
 			return true;
 		}
 		int bTop = this.booksAreaTop();
-		int bookH = this.booksAreaBottom() - bTop;
-		ScrollBar.Click book = ScrollBar.click(
-			barX, bTop, bookH, this.bookScroll, this.bookMaxScrollPx(this.currentBooks().size()), mouseX, mouseY);
+		ScrollBar.Click book = ScrollBar.click(barX, bTop, this.booksAreaBottom() - bTop, this.bookScroll, this.bookMaxScrollPx(this.currentBooks().size()), mouseX, mouseY);
 		if (book != null) {
 			this.bookScroll = book.scroll();
 			this.barDragging = true;

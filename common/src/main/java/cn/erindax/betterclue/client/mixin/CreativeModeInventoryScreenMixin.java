@@ -17,17 +17,16 @@ public abstract class CreativeModeInventoryScreenMixin extends Screen {
 	}
 
 	@Inject(method = "init", at = @At("TAIL"))
-	private void betterclue$addPanel(CallbackInfo ignored) {
-		if (BookPanel.alreadyPresent(this)) {
-			return;
+	private void betterclue$addPanel(CallbackInfo ci) {
+		if (!BookPanel.alreadyPresent(this)) {
+			this.addRenderableWidget(new BookPanel(this.width, this.height, 195));
 		}
-		this.addRenderableWidget(new BookPanel(this.width, this.height, 195));
 	}
 
 	@Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true)
-	private void betterclue$scrollPanel(double mouseX, double mouseY, double horizontal, double vertical, CallbackInfoReturnable<Boolean> cir) {
+	private void betterclue$scrollPanel(double mouseX, double mouseY, double horizontalAmount, double verticalAmount, CallbackInfoReturnable<Boolean> cir) {
 		BookPanel panel = BookPanel.find(this);
-		if (panel != null && panel.mouseScrolled(mouseX, mouseY, horizontal, vertical)) {
+		if (panel != null && panel.scroll(mouseX, mouseY, verticalAmount)) {
 			cir.setReturnValue(true);
 		}
 	}
