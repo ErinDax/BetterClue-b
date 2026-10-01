@@ -8,7 +8,6 @@ import cn.erindax.betterclue.common.network.BookData;
 import cn.erindax.betterclue.common.network.ShareDispatcher;
 import com.mojang.blaze3d.platform.InputConstants;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
 import net.minecraft.client.Minecraft;
@@ -19,8 +18,6 @@ import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -117,19 +114,12 @@ public final class ShareHandler {
 	}
 
 	private static BookData fromHeldBook(ItemStack stack) {
-		if (!stack.is(Items.WRITTEN_BOOK)) {
-			return null;
-		}
+		String pagesKey = CollectHandler.pagesKey(stack);
 		CompoundTag tag = stack.getTag();
-		if (tag == null) {
+		if (pagesKey == null || tag == null) {
 			return null;
 		}
-		List<String> pages = new ArrayList<>();
-		ListTag pageList = tag.getList("pages", Tag.TAG_STRING);
-		for (int i = 0; i < pageList.size(); i++) {
-			pages.add(CollectHandler.pageToPlainText(pageList.getString(i)));
-		}
-		return new BookData(tag.getString("title"), tag.getString("author"), pages);
+		return new BookData(tag.getString("title"), tag.getString("author"), CollectHandler.readPages(tag, pagesKey));
 	}
 
 	private static int nearbyPlayerCount() {

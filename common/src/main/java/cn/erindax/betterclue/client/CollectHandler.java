@@ -16,10 +16,12 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -27,6 +29,7 @@ import org.slf4j.Logger;
 
 public final class CollectHandler {
 	private static final Logger LOGGER = BetterClue.LOGGER;
+	private static final ResourceLocation CANDLELIGHT_NOTE = new ResourceLocation("candlelight", "note_paper_written");
 
 	private CollectHandler() {
 	}
@@ -54,21 +57,39 @@ public final class CollectHandler {
 	}
 
 	public static void onBookOpened(ItemStack stack) {
-		if (!stack.is(Items.WRITTEN_BOOK)) {
-			return;
-		}
+		String pagesKey = pagesKey(stack);
 		CompoundTag tag = stack.getTag();
-		if (tag == null) {
+		if (pagesKey == null || tag == null) {
 			return;
 		}
 		String title = tag.getString("title");
-		String author = tag.getString("author");
+		notifyAddResult(Library.get().addBook(title, tag.getString("author"), readPages(tag, pagesKey)), title);
+	}
+
+	public static void onItemUsed(ItemStack stack) {
+		if (isCandlelightNote(stack)) {
+			onBookOpened(stack);
+		}
+	}
+
+	public static String pagesKey(ItemStack stack) {
+		if (stack.is(Items.WRITTEN_BOOK)) {
+			return "pages";
+		}
+		return isCandlelightNote(stack) ? "text" : null;
+	}
+
+	private static boolean isCandlelightNote(ItemStack stack) {
+		return !stack.isEmpty() && CANDLELIGHT_NOTE.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()));
+	}
+
+	public static List<String> readPages(CompoundTag tag, String pagesKey) {
 		List<String> pages = new ArrayList<>();
-		ListTag pageList = tag.getList("pages", Tag.TAG_STRING);
+		ListTag pageList = tag.getList(pagesKey, Tag.TAG_STRING);
 		for (int i = 0; i < pageList.size(); i++) {
 			pages.add(pageToPlainText(pageList.getString(i)));
 		}
-		notifyAddResult(Library.get().addBook(title, author, pages), title);
+		return pages;
 	}
 
 	public static void collectShared(BookData book) {
