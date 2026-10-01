@@ -13,7 +13,7 @@ import net.minecraft.world.item.Items;
 
 public class NoticeToast implements Toast {
 	private static final ResourceLocation BACKGROUND = ResourceLocation.withDefaultNamespace("toast/recipe");
-	private static final ItemStack BOOK_ICON = new ItemStack(Items.WRITTEN_BOOK);
+	private static final ItemStack ICON = new ItemStack(Items.WRITTEN_BOOK);
 	private static final long DISPLAY_MS = 4500L;
 	private static final int MIN_WIDTH = 160;
 	private static final int MAX_WIDTH = 240;
@@ -23,9 +23,9 @@ public class NoticeToast implements Toast {
 	private final Component message;
 	private final int width;
 	private long firstSeen = -1L;
-	private Visibility wantedVisibility = Visibility.SHOW;
+	private Visibility visibility = Visibility.SHOW;
 
-	public NoticeToast(Component title, Component message) {
+	private NoticeToast(Component title, Component message) {
 		this.title = title;
 		this.message = message;
 		Font font = Minecraft.getInstance().font;
@@ -34,6 +34,10 @@ public class NoticeToast implements Toast {
 			textWidth = Math.max(textWidth, font.width(message));
 		}
 		this.width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, 40 + textWidth));
+	}
+
+	public static void show(Component title, Component message) {
+		Minecraft.getInstance().getToastManager().addToast(new NoticeToast(title, message));
 	}
 
 	@Override
@@ -48,7 +52,7 @@ public class NoticeToast implements Toast {
 
 	@Override
 	public Visibility getWantedVisibility() {
-		return this.wantedVisibility;
+		return this.visibility;
 	}
 
 	@Override
@@ -57,13 +61,13 @@ public class NoticeToast implements Toast {
 			this.firstSeen = timeSinceLastVisible;
 		}
 		double visibleMs = DISPLAY_MS * toastManager.getNotificationDisplayTimeMultiplier();
-		this.wantedVisibility = timeSinceLastVisible - this.firstSeen < visibleMs ? Visibility.SHOW : Visibility.HIDE;
+		this.visibility = timeSinceLastVisible - this.firstSeen < visibleMs ? Visibility.SHOW : Visibility.HIDE;
 	}
 
 	@Override
-	public void render(GuiGraphics guiGraphics, Font font, long ignored) {
+	public void render(GuiGraphics guiGraphics, Font font, long timeSinceLastVisible) {
 		guiGraphics.blitSprite(RenderType::guiTextured, BACKGROUND, 0, 0, this.width(), this.height());
-		guiGraphics.renderFakeItem(BOOK_ICON, 8, 8);
+		guiGraphics.renderFakeItem(ICON, 8, 8);
 		if (this.message == null) {
 			guiGraphics.drawString(font, this.title, 30, 12, 0x500050, false);
 		} else {
