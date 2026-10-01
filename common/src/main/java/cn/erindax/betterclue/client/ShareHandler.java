@@ -121,7 +121,7 @@ public final class ShareHandler {
 	private static BookData fromHeldBook(ItemStack stack) {
 		WrittenBookContent content = stack.get(DataComponents.WRITTEN_BOOK_CONTENT);
 		if (content == null) {
-			return null;
+			return CollectHandler.readCandlelightNote(stack);
 		}
 		List<String> pages = content.getPages(false).stream().map(Component::getString).toList();
 		return new BookData(content.title().raw(), content.author(), pages);

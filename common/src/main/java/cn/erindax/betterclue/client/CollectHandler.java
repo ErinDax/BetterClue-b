@@ -9,21 +9,30 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.WrittenBookContent;
 import org.slf4j.Logger;
 
 public final class CollectHandler {
 	private static final Logger LOGGER = BetterClue.LOGGER;
+	private static final ResourceLocation CANDLELIGHT_NOTE = ResourceLocation.fromNamespaceAndPath("candlelight", "note_paper_written");
 
 	private CollectHandler() {
 	}
@@ -59,6 +68,43 @@ public final class CollectHandler {
 		String author = content.author();
 		List<String> pages = content.getPages(false).stream().map(Component::getString).toList();
 		notifyAddResult(Library.get().addBook(title, author, pages), title);
+	}
+
+	public static void onItemUsed(ItemStack stack) {
+		BookData note = readCandlelightNote(stack);
+		if (note != null) {
+			notifyAddResult(Library.get().addBook(note.title(), note.author(), note.pages()), note.title());
+		}
+	}
+
+	public static BookData readCandlelightNote(ItemStack stack) {
+		if (stack.isEmpty() || !CANDLELIGHT_NOTE.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()))) {
+			return null;
+		}
+		CustomData data = stack.get(DataComponents.CUSTOM_DATA);
+		if (data == null) {
+			return null;
+		}
+		CompoundTag tag = data.copyTag();
+		List<String> pages = new ArrayList<>();
+		ListTag pageList = tag.getList("text", Tag.TAG_STRING);
+		for (int i = 0; i < pageList.size(); i++) {
+			pages.add(pageToPlainText(pageList.getString(i)));
+		}
+		return new BookData(tag.getString("title"), tag.getString("author"), pages);
+	}
+
+	private static String pageToPlainText(String raw) {
+		ClientLevel level = Minecraft.getInstance().level;
+		if (raw.isEmpty() || level == null) {
+			return raw;
+		}
+		try {
+			Component component = Component.Serializer.fromJson(raw, level.registryAccess());
+			return component == null ? raw : component.getString();
+		} catch (Exception ignored) {
+			return raw;
+		}
 	}
 
 	public static void collectShared(BookData book) {
