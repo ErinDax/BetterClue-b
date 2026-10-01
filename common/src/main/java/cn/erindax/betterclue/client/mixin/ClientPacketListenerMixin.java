@@ -12,11 +12,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(ClientPacketListener.class)
 public abstract class ClientPacketListenerMixin {
-	@Inject(method = "handleOpenBook", at = @At("HEAD"))
-	private void betterclue$onOpenBook(ClientboundOpenBookPacket packet, CallbackInfo ignored) {
+	@Inject(method = "handleOpenBook", at = @At("RETURN"))
+	private void betterclue$collectOpenedBook(ClientboundOpenBookPacket packet, CallbackInfo ci) {
 		Player player = Minecraft.getInstance().player;
 		if (player != null) {
-			CollectHandler.onBookOpened(player.getItemInHand(packet.getHand()));
+			CollectHandler.collect(player.getItemInHand(packet.getHand()));
 		}
 	}
 }

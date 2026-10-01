@@ -1,199 +1,185 @@
 package cn.erindax.betterclue.client;
 
-import cn.erindax.betterclue.client.book.Book;
-import cn.erindax.betterclue.client.gui.BookReadScreen;
-import cn.erindax.betterclue.client.gui.RenamePromptScreen;
 import cn.erindax.betterclue.PlatformNetwork;
-import cn.erindax.betterclue.common.network.ShareDispatcher;
-import cn.erindax.betterclue.common.network.ShareNearbyC2S;
-import cn.erindax.betterclue.common.network.ShareViewC2S;
-import cn.erindax.betterclue.common.network.BookData;
-import com.mojang.blaze3d.platform.InputConstants;
+import cn.erindax.betterclue.client.book.Book;
+import cn.erindax.betterclue.client.book.BookReader;
+import cn.erindax.betterclue.client.gui.BookReadScreen;
+import cn.erindax.betterclue.network.BookData;
+import cn.erindax.betterclue.network.Fragment;
+import cn.erindax.betterclue.network.ShareDelivery;
+import cn.erindax.betterclue.network.ShareDispatcher;
+import cn.erindax.betterclue.network.ShareRequest;
+import cn.erindax.betterclue.network.Transfer;
 import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
-import java.util.Queue;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.ChatScreen;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.component.WrittenBookContent;
-import net.minecraft.world.phys.AABB;
-import org.lwjgl.glfw.GLFW;
 
 public final class ShareHandler {
-	private static final Queue<Offer> OFFERS = new ArrayDeque<>();
-	private static final ItemStack BOOK_ICON = new ItemStack(Items.WRITTEN_BOOK);
-	private static boolean wasY;
-	private static boolean wasN;
+	private static final int RANGE = (int) ShareDispatcher.SHARE_RANGE;
+	private static final int MAX_OFFERS = 8;
+	private static final long COOLDOWN_MS = 3000L;
+	private static final int HEADROOM = 1024;
+	private static final ItemStack ICON = new ItemStack(Items.WRITTEN_BOOK);
+	private static final Deque<ShareDelivery> OFFERS = new ArrayDeque<>();
+	private static final Transfer.Assembler ASSEMBLER = new Transfer.Assembler();
+	private static int nextTransferId;
+	private static long cooldownUntil;
 
 	private ShareHandler() {
 	}
 
-	public static void offer(String fromName, BookData book) {
-		OFFERS.add(new Offer(fromName, book));
-	}
-
-	public static void openDirect(String ignoredFromName, BookData book) {
-		Minecraft.getInstance().setScreen(new BookReadScreen(book.pages(), () -> {
-			CollectHandler.collectShared(book);
-			Minecraft.getInstance().setScreen(null);
-		}));
-	}
-
-	public static void shareCollected(Book book) {
-		if (book == null) {
+	public static void receive(Fragment fragment) {
+		byte[] payload = ASSEMBLER.accept(fragment);
+		if (payload == null) {
 			return;
 		}
-		shareData(new BookData(book.title(), book.author(), book.pages()));
-	}
-
-	public static void shareCollected(List<Book> books) {
-		if (books == null || books.isEmpty()) {
-			CollectHandler.showNotice("该分类暂无书籍");
+		ShareDelivery delivery;
+		try {
+			delivery = ShareDelivery.decode(payload);
+		} catch (RuntimeException e) {
 			return;
 		}
-		int nearby = shareableNearbyCount(ShareNearbyC2S.TYPE);
-		if (nearby < 0) {
-			return;
+		Minecraft minecraft = Minecraft.getInstance();
+		if (delivery.open() && minecraft.screen == null) {
+			BookData book = delivery.books().get(0);
+			minecraft.setScreen(new BookReadScreen(book.pages(), () -> {
+				CollectHandler.collectShared(List.of(book));
+				minecraft.setScreen(null);
+			}));
+		} else if (OFFERS.size() < MAX_OFFERS) {
+			OFFERS.add(delivery);
 		}
-		for (Book book : books) {
-			PlatformNetwork.sendToServer(new ShareNearbyC2S(new BookData(book.title(), book.author(), book.pages())));
-		}
-		CollectHandler.showNotice("已向附近 " + nearby + " 名玩家分享 " + books.size() + " 本书");
 	}
 
-	private static void shareData(BookData book) {
-		int nearby = shareableNearbyCount(ShareNearbyC2S.TYPE);
-		if (nearby < 0) {
-			return;
-		}
-		PlatformNetwork.sendToServer(new ShareNearbyC2S(book));
-		CollectHandler.showNotice("已向附近 " + nearby + " 名玩家分享《" + book.displayTitle() + "》");
-	}
-
-	private static int shareableNearbyCount(CustomPacketPayload.Type<?> type) {
-		if (!PlatformNetwork.canSendToServer(type)) {
-			CollectHandler.showNotice("当前服务器无法分享");
-			return -1;
-		}
-		int nearby = nearbyPlayerCount();
-		if (nearby <= 0) {
-			CollectHandler.showNotice("附近5格内没有其他玩家");
-			return -1;
-		}
-		return nearby;
-	}
-
-	public static void shareHeldToLookedPlayer() {
+	public static void shareHeld() {
 		Minecraft minecraft = Minecraft.getInstance();
 		LocalPlayer player = minecraft.player;
-		if (player == null) {
+		if (player == null || !ready()) {
 			return;
 		}
-		if (!PlatformNetwork.canSendToServer(ShareViewC2S.TYPE)) {
-			CollectHandler.showNotice("当前服务器无法分享");
-			return;
-		}
-		BookData book = fromHeldBook(player.getMainHandItem());
+		BookData book = BookReader.read(player.getMainHandItem());
 		if (book == null) {
-			CollectHandler.showNotice("请手持成书后再分享");
+			Texts.toast("betterclue.share.not_holding");
 			return;
 		}
-		Entity hit = minecraft.crosshairPickEntity;
-		if (!(hit instanceof Player target) || target.getUUID().equals(player.getUUID()) || player.distanceTo(target) > ShareDispatcher.SHARE_RANGE) {
-			CollectHandler.showNotice("请准星对准5格内的玩家");
+		if (!(minecraft.crosshairPickEntity instanceof Player target) || target == player || player.distanceTo(target) > ShareDispatcher.SHARE_RANGE) {
+			Texts.toast("betterclue.share.no_target", RANGE);
 			return;
 		}
-		PlatformNetwork.sendToServer(new ShareViewC2S(target.getUUID(), book));
-		CollectHandler.showNotice("已将《" + book.displayTitle() + "》分享给 " + target.getGameProfile().getName());
-	}
-
-	private static BookData fromHeldBook(ItemStack stack) {
-		WrittenBookContent content = stack.get(DataComponents.WRITTEN_BOOK_CONTENT);
-		if (content == null) {
-			return CollectHandler.readCandlelightNote(stack);
+		if (send(new ShareRequest(target.getUUID(), List.of(book)))) {
+			Texts.toast("betterclue.share.sent_to", Texts.quoted(book.title()), target.getName());
 		}
-		List<String> pages = content.getPages(false).stream().map(Component::getString).toList();
-		return new BookData(content.title().raw(), content.author(), pages);
 	}
 
-	private static int nearbyPlayerCount() {
+	public static void shareNearby(List<Book> books) {
+		if (books.isEmpty()) {
+			Texts.toast("betterclue.share.empty_category");
+			return;
+		}
+		if (!ready()) {
+			return;
+		}
+		int nearby = nearbyPlayers();
+		if (nearby == 0) {
+			Texts.toast("betterclue.share.no_nearby", RANGE);
+			return;
+		}
+		if (send(new ShareRequest(null, books.stream().map(Book::toData).toList()))) {
+			Texts.toast("betterclue.share.sent_nearby", subject(books.size(), books.get(0).title()), nearby);
+		}
+	}
+
+	public static void tick() {
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft.level == null) {
+			OFFERS.clear();
+			ASSEMBLER.reset();
+		}
+		while (BetterClueClient.SHARE_KEY.consumeClick()) {
+			if (minecraft.screen == null) {
+				shareHeld();
+			}
+		}
+		while (BetterClueClient.ACCEPT_KEY.consumeClick()) {
+			ShareDelivery offer = OFFERS.poll();
+			if (offer != null) {
+				CollectHandler.collectShared(offer.books());
+			}
+		}
+		while (BetterClueClient.DECLINE_KEY.consumeClick()) {
+			OFFERS.poll();
+		}
+	}
+
+	public static void render(GuiGraphics graphics) {
+		ShareDelivery offer = OFFERS.peek();
+		if (offer == null) {
+			return;
+		}
+		Font font = Minecraft.getInstance().font;
+		String title = Component.translatable("betterclue.offer.title", offer.sender()).getString();
+		String hint = Component.translatable(
+			"betterclue.offer.hint",
+			subject(offer.books().size(), offer.books().get(0).title()),
+			BetterClueClient.ACCEPT_KEY.getTranslatedKeyMessage(),
+			BetterClueClient.DECLINE_KEY.getTranslatedKeyMessage()
+		).getString();
+		int width = Math.min(280, Math.max(170, 40 + Math.max(font.width(title), font.width(hint))));
+		int x = graphics.guiWidth() - width - 4;
+		int y = 4;
+		graphics.fill(x, y, x + width, y + 32, 0xA0101010);
+		graphics.fill(x, y, x + width, y + 1, 0x80FFFFFF);
+		graphics.fill(x, y + 31, x + width, y + 32, 0x80000000);
+		graphics.renderFakeItem(ICON, x + 8, y + 8);
+		graphics.drawString(font, font.plainSubstrByWidth(title, width - 38), x + 30, y + 7, 0xFFFF55, false);
+		graphics.drawString(font, font.plainSubstrByWidth(hint, width - 38), x + 30, y + 18, 0xFFFFFF, false);
+	}
+
+	private static Component subject(int count, String firstTitle) {
+		return count == 1 ? Texts.quoted(firstTitle) : Component.translatable("betterclue.share.books", count);
+	}
+
+	private static boolean ready() {
+		if (!PlatformNetwork.canSendToServer()) {
+			Texts.toast("betterclue.share.unsupported");
+			return false;
+		}
+		if (Util.getMillis() < cooldownUntil) {
+			Texts.toast("betterclue.share.cooldown");
+			return false;
+		}
+		return true;
+	}
+
+	private static boolean send(ShareRequest request) {
+		byte[] payload = request.encode();
+		if (request.books().size() > ShareRequest.MAX_BOOKS || payload.length > Transfer.MAX_LENGTH - HEADROOM) {
+			Texts.toast("betterclue.share.too_large");
+			return false;
+		}
+		for (Fragment fragment : Transfer.split(nextTransferId++, payload)) {
+			PlatformNetwork.sendToServer(fragment);
+		}
+		cooldownUntil = Util.getMillis() + COOLDOWN_MS;
+		return true;
+	}
+
+	private static int nearbyPlayers() {
 		Minecraft minecraft = Minecraft.getInstance();
 		LocalPlayer player = minecraft.player;
 		if (player == null || minecraft.level == null) {
 			return 0;
 		}
-		double r = ShareDispatcher.SHARE_RANGE;
-		AABB box = player.getBoundingBox().inflate(r);
-		return minecraft.level.getEntitiesOfClass(Player.class, box, other -> other != player && player.distanceTo(other) <= r).size();
-	}
-
-	public static void render(GuiGraphics graphics, int screenWidth) {
-		Offer offer = OFFERS.peek();
-		if (offer == null) {
-			return;
-		}
-		Minecraft minecraft = Minecraft.getInstance();
-		Font font = minecraft.font;
-		String title = offer.fromName + "想向你分享书籍";
-		String message = "《" + offer.book.displayTitle() + "》  Y同意  N拒绝";
-		int width = Math.min(280, Math.max(170, 40 + Math.max(font.width(title), font.width(message))));
-		int x = screenWidth - width - 4;
-		int y = 4;
-		graphics.fill(x, y, x + width, y + 32, 0xA0101010);
-		graphics.fill(x, y, x + width, y + 1, 0x80FFFFFF);
-		graphics.fill(x, y + 31, x + width, y + 32, 0x80000000);
-		graphics.renderFakeItem(BOOK_ICON, x + 8, y + 8);
-		graphics.drawString(font, font.plainSubstrByWidth(title, width - 38), x + 30, y + 7, 0xFFFF55, false);
-		graphics.drawString(font, font.plainSubstrByWidth(message, width - 38), x + 30, y + 18, 0xFFFFFF, false);
-	}
-
-	public static void tick() {
-		Minecraft minecraft = Minecraft.getInstance();
-		long window = minecraft.getWindow().getWindow();
-		boolean y = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_Y);
-		boolean n = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_N);
-		if (!OFFERS.isEmpty() && canUseAnswerKeys(minecraft.screen)) {
-			if (y && !wasY) {
-				accept();
-			} else if (n && !wasN) {
-				OFFERS.poll();
-			}
-		}
-		wasY = y;
-		wasN = n;
-		while (ClientSetup.SHARE_KEY.consumeClick()) {
-			if (minecraft.screen == null) {
-				shareHeldToLookedPlayer();
-			}
-		}
-	}
-
-	private static boolean canUseAnswerKeys(Screen screen) {
-		if (screen instanceof ChatScreen || screen instanceof RenamePromptScreen) {
-			return false;
-		}
-		return screen == null || !(screen.getFocused() instanceof EditBox);
-	}
-
-	private static void accept() {
-		Offer offer = OFFERS.poll();
-		if (offer == null) {
-			return;
-		}
-		CollectHandler.collectShared(offer.book);
-	}
-
-	private record Offer(String fromName, BookData book) {
+		double range = ShareDispatcher.SHARE_RANGE;
+		return minecraft.level.getEntitiesOfClass(Player.class, player.getBoundingBox().inflate(range), other -> other != player && player.distanceTo(other) <= range).size();
 	}
 }

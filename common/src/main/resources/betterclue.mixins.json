@@ -4,12 +4,12 @@
   "package": "cn.erindax.betterclue.client.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
+    "AbstractContainerScreenMixin",
     "ClientPacketListenerMixin",
-    "LecternScreenMixin",
-    "MultiPlayerGameModeMixin",
-    "InventoryScreenMixin",
     "CreativeModeInventoryScreenMixin",
-    "AbstractContainerScreenMixin"
+    "InventoryScreenMixin",
+    "LecternScreenMixin",
+    "MultiPlayerGameModeMixin"
   ],
   "injectors": {
     "defaultRequire": 1
