@@ -10,7 +10,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 public class NoticeToast implements Toast {
-	private static final ItemStack BOOK_ICON = new ItemStack(Items.WRITTEN_BOOK);
+	private static final ItemStack ICON = new ItemStack(Items.WRITTEN_BOOK);
 	private static final long DISPLAY_MS = 4500L;
 	private static final int MIN_WIDTH = 160;
 	private static final int MAX_WIDTH = 240;
@@ -21,7 +21,7 @@ public class NoticeToast implements Toast {
 	private final int width;
 	private long firstSeen = -1L;
 
-	public NoticeToast(Component title, Component message) {
+	private NoticeToast(Component title, Component message) {
 		this.title = title;
 		this.message = message;
 		Font font = Minecraft.getInstance().font;
@@ -30,6 +30,10 @@ public class NoticeToast implements Toast {
 			textWidth = Math.max(textWidth, font.width(message));
 		}
 		this.width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, 40 + textWidth));
+	}
+
+	public static void show(Component title, Component message) {
+		Minecraft.getInstance().getToasts().addToast(new NoticeToast(title, message));
 	}
 
 	@Override
@@ -52,7 +56,7 @@ public class NoticeToast implements Toast {
 		guiGraphics.fill(0, 0, w, h, 0xA0101010);
 		guiGraphics.fill(0, 0, w, 1, 0x80FFFFFF);
 		guiGraphics.fill(0, h - 1, w, h, 0x80000000);
-		guiGraphics.renderFakeItem(BOOK_ICON, 8, 8);
+		guiGraphics.renderFakeItem(ICON, 8, 8);
 		Font font = toastComponent.getMinecraft().font;
 		if (this.message == null) {
 			guiGraphics.drawString(font, this.title, 30, 12, 0xFFFF55, false);
