@@ -42,7 +42,6 @@ public class BookPanel extends AbstractWidget {
 	private final int panelHeight;
 	private final int catAreaHeight;
 	private final Font font;
-	private boolean expanded = true;
 	private int selectedCategoryIndex;
 	private int categoryScroll;
 	private int bookScroll;
@@ -142,12 +141,12 @@ public class BookPanel extends AbstractWidget {
 
 	@Override
 	public boolean isMouseOver(double mouseX, double mouseY) {
-		return this.expanded ? super.isMouseOver(mouseX, mouseY) : this.inCollapsedStrip(mouseX, mouseY);
+		return Library.get().panelExpanded() ? super.isMouseOver(mouseX, mouseY) : this.inCollapsedStrip(mouseX, mouseY);
 	}
 
 	@Override
 	protected void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-		if (this.expanded) {
+		if (Library.get().panelExpanded()) {
 			this.renderExpanded(guiGraphics, mouseX, mouseY);
 		} else {
 			this.renderCollapsed(guiGraphics, mouseX, mouseY);
@@ -318,9 +317,9 @@ public class BookPanel extends AbstractWidget {
 		if (!this.active || !this.visible || button != 0) {
 			return false;
 		}
-		if (!this.expanded) {
+		if (!Library.get().panelExpanded()) {
 			if (this.inCollapsedStrip(mouseX, mouseY)) {
-				this.expanded = true;
+				Library.get().setPanelExpanded(true);
 				return true;
 			}
 			return false;
@@ -332,7 +331,7 @@ public class BookPanel extends AbstractWidget {
 		this.clampSelection(categories);
 
 		if (inRect(mouseX, mouseY, x + w - 14, this.getY() + 2, 12, HEADER_HEIGHT - 2)) {
-			this.expanded = false;
+			Library.get().setPanelExpanded(false);
 			return true;
 		}
 		if (this.clickScrollBar(mouseX, mouseY)) {
@@ -447,7 +446,7 @@ public class BookPanel extends AbstractWidget {
 	}
 
 	public boolean scroll(double mouseX, double mouseY, double amount) {
-		if (!this.expanded || amount == 0 || !this.isMouseOver(mouseX, mouseY)) {
+		if (!Library.get().panelExpanded() || amount == 0 || !this.isMouseOver(mouseX, mouseY)) {
 			return false;
 		}
 		int delta = (int) Math.round(-amount);

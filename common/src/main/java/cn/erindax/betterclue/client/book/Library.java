@@ -38,6 +38,7 @@ public final class Library {
 	private String preferredCategory = "";
 	private boolean loaded;
 	private boolean writable = true;
+	private boolean panelExpanded = true;
 
 	private Library() {
 	}
@@ -72,6 +73,17 @@ public final class Library {
 			}
 		}
 		return 0;
+	}
+
+	public boolean panelExpanded() {
+		return this.panelExpanded;
+	}
+
+	public void setPanelExpanded(boolean expanded) {
+		if (this.panelExpanded != expanded) {
+			this.panelExpanded = expanded;
+			this.save();
+		}
 	}
 
 	public void setPreferredCategory(String name) {
@@ -253,6 +265,7 @@ public final class Library {
 			throw new IOException("Unsupported library version " + version);
 		}
 		this.preferredCategory = root.getString("PreferredCategory");
+		this.panelExpanded = !root.contains("PanelExpanded") || root.getBoolean("PanelExpanded");
 		ListTag list = root.getList("Categories", Tag.TAG_COMPOUND);
 		for (int i = 0; i < list.size(); i++) {
 			this.categories.add(Category.fromTag(list.getCompound(i)));
@@ -263,6 +276,7 @@ public final class Library {
 		CompoundTag root = new CompoundTag();
 		root.putInt("Version", VERSION);
 		root.putString("PreferredCategory", this.preferredCategory);
+		root.putBoolean("PanelExpanded", this.panelExpanded);
 		ListTag list = new ListTag();
 		for (Category category : this.categories) {
 			list.add(category.toTag());
