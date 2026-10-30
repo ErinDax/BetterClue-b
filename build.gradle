@@ -1,16 +1,16 @@
 plugins {
-	id 'dev.architectury.loom' version '1.17.493' apply false
-	id 'architectury-plugin' version '3.5.170'
-	id 'com.gradleup.shadow' version '9.6.1' apply false
+	id 'dev.architectury.loom' apply false
+	id 'architectury-plugin'
+	id 'com.gradleup.shadow' apply false
 }
 
 architectury {
-	minecraft = rootProject.minecraft_version
+	minecraft = project.minecraft_version
 }
 
 allprojects {
-	group = rootProject.maven_group
-	version = "${rootProject.mod_version}+${rootProject.minecraft_version}"
+	group = project.maven_group
+	version = "${project.mod_version}+mc${project.minecraft_version}"
 }
 
 subprojects {
@@ -18,7 +18,7 @@ subprojects {
 	apply plugin: 'architectury-plugin'
 
 	base {
-		archivesName = "${rootProject.archives_name}-${project.name}"
+		archivesName = "${project.archives_name}-${project.name}"
 	}
 
 	loom {
@@ -26,13 +26,13 @@ subprojects {
 	}
 
 	dependencies {
-		minecraft "net.minecraft:minecraft:${rootProject.minecraft_version}"
+		minecraft "net.minecraft:minecraft:${project.minecraft_version}"
 		mappings loom.officialMojangMappings()
 	}
 
 	java {
 		toolchain {
-			languageVersion = JavaLanguageVersion.of(rootProject.java_version)
+			languageVersion = JavaLanguageVersion.of(project.java_version)
 		}
 	}
 
