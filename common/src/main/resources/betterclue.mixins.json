@@ -8,7 +8,6 @@
     "ClientPacketListenerMixin",
     "CreativeModeInventoryScreenMixin",
     "InventoryScreenMixin",
-    "LecternScreenMixin",
     "MultiPlayerGameModeMixin"
   ],
   "injectors": {
